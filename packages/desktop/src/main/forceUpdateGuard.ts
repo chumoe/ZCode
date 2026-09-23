@@ -217,38 +217,6 @@ function formatForceUpdateDialogText(
 export async function maybeBlockStartupForForceUpdate(
   options: ForceUpdateGuardOptions,
 ): Promise<ForceUpdateGuardResult> {
-  const requirement = await resolveDesktopForceUpdateRequirement({
-    ...options,
-    endpointOrigin: options.endpointOrigin,
-  });
-  if (!requirement) {
-    return { blocked: false };
-  }
-
-  options.logger.warn("[force-update] 远端配置要求强制升级，阻止创建主窗口", requirement);
-  options.onBlocked?.(requirement);
-  const { app, shell } = await import("electron");
-  const action = await showForceUpdatePrompt(
-    formatForceUpdateDialogText(requirement, options.locale),
-    options.locale,
-    options.logger,
-    {
-      startAutoUpdate: (onStateChange) =>
-        options.requestAutoUpdate?.(onStateChange) ??
-        requestForceAutoUpdate(onStateChange, "force-update", requirement.minimalVersion),
-    },
-  );
-  if (action === "auto") {
-    return { blocked: true, requirement };
-  }
-
-  if (action === "manual") {
-    const url = resolveForceUpdateDownloadUrl(options.locale, options.endpointOrigin);
-    options.logger.info(`[force-update] 用户选择手动升级：${url}`);
-    await shell.openExternal(url);
-  }
-
-  // 强制升级命中后不能进入主界面；非自动升级路径处理完弹窗后退出，避免露出旧客户端功能。
-  app.quit();
-  return { blocked: true, requirement };
+  // 已关闭遥测和远端检查，跳过强制升级门控
+  return { blocked: false };
 }
