@@ -1,6 +1,6 @@
 import armsRum from "@arms/rum-electron";
-import { ZCODE_TELEMETRY_ENABLED } from "@zcode/shared/env";
 import type { ZCodeMcpTelemetryEvent } from "@zcode/shared";
+import { ZCODE_TELEMETRY_ENABLED } from "@zcode/shared";
 
 interface DesktopMcpTelemetryContext {
   appVersion: string;

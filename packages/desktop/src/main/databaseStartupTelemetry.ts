@@ -1,7 +1,7 @@
 import armsRum from "@arms/rum-electron";
-import { ZCODE_TELEMETRY_ENABLED } from "@zcode/shared/env";
 import {
   ZCODE_VERSION,
+  ZCODE_TELEMETRY_ENABLED,
   type DatabaseStartupState,
   type ArmsCustomEventPayload,
 } from "@zcode/shared";

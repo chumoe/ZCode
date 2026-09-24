@@ -1,7 +1,6 @@
 /* eslint-disable max-lines -- 远程连接、OAuth 回调、遥测和通知 IPC 共用窗口级上下文，集中注册避免跨文件状态漂移。 */
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import armsRum from "@arms/rum-electron";
-import { ZCODE_TELEMETRY_ENABLED } from "@zcode/shared/env";
 import {
   armsCustomEventPayloadSchema,
   buildRemoteWorkspaceConnectResultTelemetry,
@@ -14,6 +13,7 @@ import {
   PlatformChannels,
   remoteTargetSchema,
   rendererTelemetryEventPayloadSchema,
+  ZCODE_TELEMETRY_ENABLED,
   type ArmsRumEnv,
   type RemoteTarget,
   type TelemetryEventPayload,
