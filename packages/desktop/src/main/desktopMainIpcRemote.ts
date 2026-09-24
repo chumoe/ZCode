@@ -1,6 +1,7 @@
 /* eslint-disable max-lines -- 远程连接、OAuth 回调、遥测和通知 IPC 共用窗口级上下文，集中注册避免跨文件状态漂移。 */
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import armsRum from "@arms/rum-electron";
+import { ZCODE_TELEMETRY_ENABLED } from "@zcode/shared/env";
 import {
   armsCustomEventPayloadSchema,
   buildRemoteWorkspaceConnectResultTelemetry,
@@ -213,18 +214,21 @@ export function registerRemoteIpcHandlers(options: {
     ? enableSharedFinalArmsCustomEventE2EController()
     : null;
 
-  configureRemoteUsageArmsTelemetry({
-    armsCustomContext: options.armsCustomContext,
-    getRemoteConnectionStats: options.getRemoteConnectionStats,
-    sendCustom: (payload) =>
-      armsRum.sendCustom(payload as Parameters<typeof armsRum.sendCustom>[0]),
-    e2eController: finalArmsCustomEventE2E,
-    logger: options.logger,
-  });
+  if (ZCODE_TELEMETRY_ENABLED) {
+    configureRemoteUsageArmsTelemetry({
+      armsCustomContext: options.armsCustomContext,
+      getRemoteConnectionStats: options.getRemoteConnectionStats,
+      sendCustom: (payload) =>
+        armsRum.sendCustom(payload as Parameters<typeof armsRum.sendCustom>[0]),
+      e2eController: finalArmsCustomEventE2E,
+      logger: options.logger,
+    });
+  }
 
   function reportRemoteConnectResultToArmsSafely(
     params: Parameters<typeof reportRemoteConnectResultToArms>[0],
   ): void {
+    if (!ZCODE_TELEMETRY_ENABLED) return;
     try {
       reportRemoteConnectResultToArms(params);
     } catch (error) {
@@ -339,6 +343,7 @@ export function registerRemoteIpcHandlers(options: {
   });
 
   ipcMain.handle(PlatformChannels.ReportArmsCustomEvent, async (event, payload: unknown) => {
+    if (!ZCODE_TELEMETRY_ENABLED) return;
     const result = armsCustomEventPayloadSchema.safeParse(payload);
     if (!result.success) {
       options.logger.warn(

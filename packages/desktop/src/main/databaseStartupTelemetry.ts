@@ -1,4 +1,5 @@
 import armsRum from "@arms/rum-electron";
+import { ZCODE_TELEMETRY_ENABLED } from "@zcode/shared/env";
 import {
   ZCODE_VERSION,
   type DatabaseStartupState,
@@ -18,6 +19,7 @@ function send(
   value: number,
   properties: ArmsCustomEventPayload["properties"] = {},
 ) {
+  if (!ZCODE_TELEMETRY_ENABLED) return;
   const eventId = `${state.attemptId}:${name}:${properties?.scope_id ?? properties?.database_id ?? state.sequence}`;
   try {
     const payload = buildFinalArmsCustomEventPayload({

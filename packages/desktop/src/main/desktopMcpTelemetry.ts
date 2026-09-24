@@ -1,4 +1,5 @@
 import armsRum from "@arms/rum-electron";
+import { ZCODE_TELEMETRY_ENABLED } from "@zcode/shared/env";
 import type { ZCodeMcpTelemetryEvent } from "@zcode/shared";
 
 interface DesktopMcpTelemetryContext {
@@ -18,7 +19,7 @@ export function reportMcpTelemetryToArms(
   runtimeSurface: "local" | "remote",
 ): void {
   // 旧 CLI 的内存通知仍允许协议解析，但不能再生成已废弃的 ARMS 事件。
-  if (!context || event.kind === "memory") return;
+  if (!ZCODE_TELEMETRY_ENABLED || !context || event.kind === "memory") return;
   const mapped = mapMcpTelemetryEvent(event);
   try {
     armsRum.sendCustom({
