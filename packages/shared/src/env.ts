@@ -8,6 +8,9 @@ export type ArmsRumEnv = "local" | "prod";
 // 非构建环境（如 e2e 测试的 mocha）下 define 不存在，用 typeof 检查 + fallback 避免 ReferenceError
 declare const __ZCODE_ENV__: string;
 declare const __ZCODE_PRODUCT_FLAVOR__: string;
+declare const __ZCODE_ARMS_RUM_ENDPOINT__: string;
+declare const __ZCODE_TELEMETRY_REPORT_ENDPOINT__: string;
+declare const __ZCODE_AUTO_UPDATE_ENABLED__: boolean;
 
 export function normalizeZCodeEnv(value: string | undefined): ZCodeEnv {
   return value?.trim().toLowerCase() === "production" ? "production" : "test";
