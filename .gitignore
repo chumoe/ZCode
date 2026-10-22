@@ -75,3 +75,11 @@ packages/desktop/resources/macos-window-bounds/
 __pycache__/
 *.pyc
 .zcode-runtime
+
+# 本机开发环境/工具残留（不入库）
+.local-pnpm/
+.v2c/
+.xdg/
+.zcode/
+.zcodeignore
+/index.js

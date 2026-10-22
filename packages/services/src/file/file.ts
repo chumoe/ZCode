@@ -77,6 +77,19 @@ export interface IFileService {
     transform: "sync-gitignore" | "reset-defaults";
   }): Promise<{ content: string }>;
   writeWorkspaceFileSearchIgnore(params: { rootPath: string; content: string }): Promise<void>;
+  /**
+   * 写入文本文件，供内嵌编辑器保存使用。
+   * 原子写入：先写临时文件再 rename，避免写半截。
+   */
+  writeTextFile(params: { path: string; content: string; encoding?: BufferEncoding }): Promise<void>;
+  /** 复制文件/目录到目标路径。目录递归复制。 */
+  copyItem(params: { sourcePath: string; targetPath: string }): Promise<void>;
+  /** 移动/重命名文件/目录。 */
+  moveItem(params: { sourcePath: string; targetPath: string }): Promise<void>;
+  /** 删除文件/目录。目录递归删除。 */
+  deleteItem(params: { path: string }): Promise<void>;
+  /** 创建目录（含中间目录，同 mkdir -p）。 */
+  createDirectory(params: { path: string }): Promise<void>;
 }
 
 export const IFileService = createServiceDescriptor<IFileService>(ServiceChannels.File);

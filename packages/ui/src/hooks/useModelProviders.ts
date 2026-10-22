@@ -211,6 +211,15 @@ export function useModelProviders(target: {
     ],
   );
 
+  const fetchProviderModels = useCallback(
+    async (providerId: string): Promise<void> => {
+      // fetchProviderModels 会批量导入并返回最新 view；UI 无需关心细节，只需刷新状态。
+      await providerSettingsService.fetchProviderModels(providerId);
+      await refresh();
+    },
+    [providerSettingsService, refresh],
+  );
+
   return {
     modelProviders: effectiveModelProviders,
     providerTemplates: providerSettingsView?.providerTemplates ?? [],
@@ -232,6 +241,7 @@ export function useModelProviders(target: {
     reorderProviderModels,
     saveDisplayOrder,
     testModelConnectivity,
+    fetchProviderModels,
     providerSettingsView,
   };
 }

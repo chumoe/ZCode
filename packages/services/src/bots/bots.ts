@@ -85,6 +85,31 @@ export type BotWeixinRegistrationPollResult =
       message?: string;
     };
 
+export interface BotQQRegistrationBeginResult {
+  qrUrl: string;
+  interval: number;
+  expiresAt: number;
+}
+
+export interface BotQQRegistrationPollParams {
+  qrUrl?: string;
+}
+
+export type BotQQRegistrationPollResult =
+  | {
+      status: "pending" | "scanned";
+      interval: number;
+    }
+  | {
+      status: "success";
+      appId: string;
+      appSecret: string;
+    }
+  | {
+      status: "expired" | "error";
+      message?: string;
+    };
+
 export interface BotFeishuRegistrationBeginParams {
   domain?: "feishu" | "lark";
 }
@@ -154,6 +179,12 @@ export interface IBotsService {
   pollWeixinRegistration(
     params: BotWeixinRegistrationPollParams,
   ): Promise<BotWeixinRegistrationPollResult>;
+  beginQQRegistration(): Promise<BotQQRegistrationBeginResult>;
+  pollQQRegistration(
+    params: BotQQRegistrationPollParams,
+  ): Promise<BotQQRegistrationPollResult>;
+  /** 取消进行中的 QQ 扫码绑定流程，释放服务端状态机。 */
+  cancelQQRegistration(): void;
   saveConfig(config: BotsConfigFile): Promise<BotsConfigFile>;
   listBots(): Promise<BotConfig[]>;
   saveBot(params: BotSaveBotParams): Promise<BotConfig>;

@@ -9,6 +9,7 @@ import {
   DingDingChannelIcon,
   DiscordChannelIcon,
   FeishuChannelIcon,
+  QQChannelIcon,
   TelegramChannelIcon,
   WeComChannelIcon,
   WeixinChannelIcon,
@@ -41,6 +42,16 @@ export type FeishuRegistrationState = {
 export type WeixinRegistrationState = {
   botId: string;
   qrCode: string;
+  qrUrl: string;
+  qrDataUrl: string | null;
+  interval: number;
+  expiresAt: number;
+  status: "pending" | "scanned" | "success" | "expired" | "error";
+  message?: string;
+};
+
+export type QQRegistrationState = {
+  botId: string;
   qrUrl: string;
   qrDataUrl: string | null;
   interval: number;
@@ -82,13 +93,15 @@ export function ProviderIcon({
         ? WeixinChannelIcon
         : provider === "feishu" || provider === "lark"
           ? FeishuChannelIcon
-          : provider === "dingding"
-            ? DingDingChannelIcon
-            : provider === "discord"
-              ? DiscordChannelIcon
-              : provider === "wecom"
-                ? WeComChannelIcon
-                : null;
+          : provider === "qq"
+            ? QQChannelIcon
+            : provider === "dingding"
+              ? DingDingChannelIcon
+              : provider === "discord"
+                ? DiscordChannelIcon
+                : provider === "wecom"
+                  ? WeComChannelIcon
+                  : null;
 
   if (iconSrc) {
     return (

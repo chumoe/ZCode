@@ -1,6 +1,7 @@
 import type { Event } from "@zcode/rpc";
 import { ServiceChannels } from "@zcode/shared";
 import {
+  isApiKeyAccess,
   type ModelConfigObject,
   type ModelId,
   type ModelSelection,
@@ -12,6 +13,7 @@ import {
   type ProviderSettingsFacade,
   type ProviderSettingsCreationResult,
   type ModelConfigResolution,
+  type ProviderSettingsProviderView,
   type ProviderSettingsView,
   type ResolveModelConfigInput,
   type SavePersonalModelDraftInput,
@@ -19,6 +21,10 @@ import {
 import { createServiceDescriptor } from "../descriptors.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
 import { createServiceLogger } from "../logger/serviceLogger.js";
+import {
+  fetchProviderModels as fetchProviderModelsRaw,
+  type FetchProviderModelsInput,
+} from "./remote-model-fetch.js";
 
 export type {
   ProviderSettingsProviderView,
@@ -68,6 +74,8 @@ export interface IProviderSettingsService {
   testModelConnectivity(
     input: ProviderSettingsConnectivityRequest,
   ): Promise<ModelConnectivityResult>;
+  /** 从自定义供应商 /models 端点拉取并批量导入模型。 */
+  fetchProviderModels(providerId: ProviderId): Promise<ProviderModelFetchResult>;
 }
 
 export const IProviderSettingsService = createServiceDescriptor<IProviderSettingsService>(
@@ -92,6 +100,19 @@ export type ProviderSettingsConnectivityTester = (
   input: ProviderSettingsConnectivityTestInput,
 ) => Promise<ModelConnectivityResult>;
 
+/**
+ * 「从供应商获取模型」的执行结果：
+ *  - fetchedIds：上游 /models 返回的全部模型 ID；
+ *  - importedIds：本次实际新增到该 provider 的模型（此前不存在）；
+ *  - skippedExistingIds：已存在于 provider 模型列表、本次跳过的模型。
+ * 供 UI 展示「导入 N，跳过 M 已存在」。
+ */
+export interface ProviderModelFetchResult {
+  readonly fetchedIds: readonly string[];
+  readonly importedIds: readonly string[];
+  readonly skippedExistingIds: readonly string[];
+}
+
 export interface IModelSelectionService {
   readonly onDidChange: Event<ModelSelectionView>;
   getView(input?: ModelSelectionViewInput): Promise<ModelSelectionView>;
@@ -105,6 +126,15 @@ export interface ModelSelectionConfiguredDefaultSource {
 export const IModelSelectionService = createServiceDescriptor<IModelSelectionService>(
   ServiceChannels.ModelSelection,
 );
+
+/** 调 remote-model-fetch；失败时抛错（服务层向上层透出干净的 error message）。 */
+async function fetchProviderModelIds(input: FetchProviderModelsInput): Promise<string[]> {
+  const result = await fetchProviderModelsRaw(input);
+  if (!result.ok) {
+    throw new Error(result.error);
+  }
+  return result.models.map((model) => model.id);
+}
 
 export function createProviderSettingsService(
   facade: ProviderSettingsFacade,
@@ -205,6 +235,46 @@ export function createProviderSettingsService(
         providerId: input.providerId,
         modelId: input.modelId,
       });
+    },
+    fetchProviderModels: async (providerId) => {
+      await ensureReady();
+      await facade.waitForProviderOperations(providerId);
+      const provider = facade
+        .getView()
+        .providers.find((item) => item.providerId === providerId);
+      if (!provider || !provider.enabled) {
+        throw new Error("Provider 不存在或已被禁用，无法从供应商获取模型。");
+      }
+      const apiType = provider.effectiveConfig.api?.type;
+      // 只有 OpenAI 兼容（chat-completions / responses）才能用 /models 拉取。
+      if (apiType !== undefined && apiType !== "openai-chat-completions" && apiType !== "openai-responses") {
+        throw new Error(
+          "仅 OpenAI 兼容的自定义供应商（openai-chat-completions / openai-responses）支持从供应商获取模型。",
+        );
+      }
+      const baseUrl = provider.effectiveConfig.api?.baseUrl ?? "";
+      const apiKey = isApiKeyAccess(provider.effectiveConfig.access)
+        ? (provider.effectiveConfig.access.apiKey ?? "")
+        : "";
+      const fetched = await fetchProviderModelIds({ baseUrl, apiKey });
+      const existing = new Set(
+        provider.models.map((model) => model.modelId),
+      );
+      const importedIds: string[] = [];
+      const skippedExistingIds: string[] = [];
+      for (const modelId of fetched) {
+        if (existing.has(modelId)) {
+          skippedExistingIds.push(modelId);
+          continue;
+        }
+        await facade.addPersonalModel(providerId, modelId, { enabled: true });
+        importedIds.push(modelId);
+      }
+      return {
+        fetchedIds: fetched,
+        importedIds,
+        skippedExistingIds,
+      };
     },
   };
 }

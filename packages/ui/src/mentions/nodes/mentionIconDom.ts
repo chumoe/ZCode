@@ -114,6 +114,49 @@ export const PLUGIN_MENTION_ICON_NODE = [
   ["path", { d: "M7 5V3" }],
 ] as const satisfies MentionLucideIconNode;
 
+// 附件/上下文 chip 图标
+export const FILE_ATTACHMENT_ICON_NODE = [
+  ["path", { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" }],
+  ["path", { d: "M14 2v4a2 2 0 0 0 2 2h4" }],
+  ["path", { d: "M10 9H8" }],
+  ["path", { d: "M16 13H8" }],
+  ["path", { d: "M16 17H8" }],
+] as const satisfies MentionLucideIconNode;
+
+export const IMAGE_ATTACHMENT_ICON_NODE = [
+  ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", ry: "2" }],
+  ["circle", { cx: "9", cy: "9", r: "2" }],
+  ["path", { d: "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" }],
+] as const satisfies MentionLucideIconNode;
+
+export const VIDEO_ATTACHMENT_ICON_NODE = [
+  ["path", { d: "m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" }],
+  ["rect", { x: "2", y: "6", width: "14", height: "12", rx: "2" }],
+] as const satisfies MentionLucideIconNode;
+
+export const WEB_ELEMENT_ICON_NODE = [
+  ["circle", { cx: "12", cy: "12", r: "10" }],
+  ["path", { d: "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" }],
+  ["path", { d: "M2 12h20" }],
+] as const satisfies MentionLucideIconNode;
+
+export const CODE_COMMENT_ICON_NODE = [
+  ["path", { d: "m18 16 4-4-4-4" }],
+  ["path", { d: "m6 8-4 4 4 4" }],
+  ["path", { d: "m14.5 4-5 16" }],
+] as const satisfies MentionLucideIconNode;
+
+export const PPTX_ICON_NODE = [
+  ["path", { d: "M2 3h20a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" }],
+  ["path", { d: "M8 12v4" }],
+  ["path", { d: "M12 10v6" }],
+  ["path", { d: "M16 8v8" }],
+] as const satisfies MentionLucideIconNode;
+
+export const CONVERSATION_SELECTION_ICON_NODE = [
+  ["path", { d: "M7.9 20A9 9 0 1 0 4 16.1L2 22Z" }],
+] as const satisfies MentionLucideIconNode;
+
 export function createMentionSvgIcon(iconNode: MentionLucideIconNode): SVGSVGElement {
   const svg = document.createElementNS(SVG_NAMESPACE, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");

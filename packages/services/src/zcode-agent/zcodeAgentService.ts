@@ -2499,6 +2499,7 @@ export function createZCodeAgentService(
                     askUserQuestionAutoResolutionEnabled: true,
                     nativeSearchEnhancementsEnabled: true,
                     memoryEnabled: false,
+                    // 无 Host 的纯 CLI 路径不支持视觉模型 fallback。
                   },
                 );
                 if (

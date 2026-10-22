@@ -4,6 +4,7 @@ import { cn } from "@/components/lib/utils.js";
 import { MermaidBlock } from "@/components/ai-elements/mermaid-block.js";
 import { CodeViewer } from "@/components/ui/code-viewer.js";
 import type { CodeCommentLabels } from "@/components/ui/code-viewer.js";
+import { CodeEditor } from "@/components/ui/code-editor.js";
 import type { CodePreviewSettings } from "@/store/index.js";
 import type { CodeCommentPreview, CodeCommentRange } from "@/lib/codeCommentContext.js";
 import { isMermaidLanguage } from "@/lib/mermaidLanguage.js";
@@ -36,6 +37,12 @@ interface CodeContentProps {
   onScroll?: UIEventHandler<HTMLDivElement>;
   scrollContainerRef?: Ref<HTMLDivElement>;
   className?: string;
+  /** 是否可编辑（切换 CodeEditor 模式） */
+  editable?: boolean;
+  /** 编辑内容变更回调 */
+  onCodeChange?: (value: string) => void;
+  /** Ctrl+S 保存回调 */
+  onSave?: () => void;
 }
 
 export function CodeContent({
@@ -60,6 +67,9 @@ export function CodeContent({
   onScroll,
   scrollContainerRef,
   className,
+  editable = false,
+  onCodeChange,
+  onSave,
 }: CodeContentProps) {
   if (isMermaidLanguage(language)) {
     return (
@@ -74,6 +84,24 @@ export function CodeContent({
           className="min-h-full rounded-xl border border-border"
         />
       </div>
+    );
+  }
+
+  // 可编辑模式使用 CodeEditor，否则使用只读 CodeViewer
+  if (editable) {
+    return (
+      <CodeEditor
+        code={code}
+        language={language}
+        theme={codeTheme}
+        showLineNumbers={codePreviewSettings.showLineNumbers}
+        wrapLongLines={wrapLongLines}
+        fontSizePx={codePreviewSettings.fontSizePx}
+        onChange={onCodeChange}
+        onSave={onSave}
+        scrollContainerRef={scrollContainerRef}
+        className={className}
+      />
     );
   }
 

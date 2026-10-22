@@ -1,4 +1,5 @@
 import { beginLocalTurnPreparation } from "@zcode/contracts";
+import type { ModelImageContentBlock, ModelInputMessage, ModelMessageContentBlock } from "@zcode/contracts";
 import { runWithModelInvocationContext, traceContextToLogContext } from "../deps.js";
 import type { ModelReasoningContentBlock, ModelToolCall, ModelUsage, ToolCallId } from "../deps.js";
 import {
@@ -23,6 +24,7 @@ import { createModelStreamingEventQueue } from "./model-streaming-event-queue.js
 import { getOrCreateReasoningBlock } from "./reasoning-stream.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-headers.js";
 import { isOutputTokenLimitFinishReason } from "./turn-output-token-continuation.js";
+import { createRuntimeModel } from "./runtime-model.js";
 
 const TOOL_INPUT_STREAM_DELTA_FALLBACK_FLUSH_CHARS = 4096;
 
@@ -58,6 +60,7 @@ export async function runModelTextRequest(
     message: "Model request media capability projection",
     model: `${model.providerId}/${model.modelId}`,
   });
+
   const mediaProjection = projectMessagesForMediaBudget(capabilityProjection.messages, {
     latestRealUserMessageIndex: options.latestRealUserMessageIndex,
   });
@@ -518,3 +521,4 @@ export async function runModelTextRequest(
     usage,
   };
 }
+

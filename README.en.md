@@ -97,6 +97,31 @@ zcode --help
 zcode --web --help
 ```
 
+#### Vision Model Fallback
+
+When the primary model does not support image input, you can configure a separate vision model to analyze images and return descriptions to the primary model. Two configuration methods:
+
+**Method A: Configuration file** (persistent)
+
+Set `visionModelSelection` in the provider configuration file, using the same format as `defaultModelSelection`:
+
+```json
+{
+  "defaultModelSelection": { "providerId": "deepseek", "modelId": "deepseek-chat" },
+  "visionModelSelection": { "providerId": "openai", "modelId": "gpt-4o" }
+}
+```
+
+**Method B: CLI flag** (one-shot, overrides configuration file)
+
+```bash
+# Format: --vision-model provider/model
+zcode --vision-model openai/gpt-4o
+zcode --web --vision-model openai/gpt-4o
+```
+
+When the primary model encounters an image but does not support vision input, it automatically calls the configured vision model to generate a description, injecting it as text in place of the default `[Media omitted...]` placeholder.
+
 In Web mode, it uses the current directory as the workspace, listens on `127.0.0.1` without token authentication by default, selects an available port, and opens a browser. Use the URL printed in the terminal and press `Ctrl+C` to stop the service. For LAN access, use `--host 0.0.0.0`; listening on a non-local address generates an access token by default. Use the token-bearing URL printed in the terminal. Set a token with `--token`, or disable token authentication with `--no-token`.
 
 When starting the general Web service's HTTP entry directly, configure API/WebSocket authentication with `ZCODE_SERVER_AUTH_TOKEN`. When creating the service programmatically, use the `authToken` option.
@@ -136,6 +161,7 @@ The root [.env.example](.env.example) provides sample service URLs and build con
 | `ZCODE_SERVER_WORKSPACE`             | Workspace path for the Web backend                                                      |
 | `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE` | Path to a local provider configuration file; uses the built-in configuration when unset |
 | `ZCODE_DIST_BASE_URL`                | Download base URL used by the CLI distribution installer                                |
+| `--vision-model`                     | CLI vision model fallback, format `provider/model`                                     |
 
 Runtime variables can be set explicitly in the environment of the startup command. See [config/README.md](config/README.md) for the default configuration shipped with the client.
 

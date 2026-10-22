@@ -86,7 +86,7 @@ export function PptxElementReferenceChip({
               type="button"
               variant="ghost"
               size="icon-xs"
-              className="mt-0.5 size-5 shrink-0 rounded-sm text-foreground-subtle opacity-0 transition-opacity hover:text-foreground group-hover/context:opacity-100 focus-visible:opacity-100"
+	              className="mt-0.5 size-5 shrink-0 rounded-sm text-foreground-subtle transition-opacity hover:text-foreground focus-visible:opacity-100"
               aria-label={removeLabel}
               title={removeLabel}
               onClick={(event) => {

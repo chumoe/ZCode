@@ -860,6 +860,11 @@ export function createHomeOnlyWebRemoteControlServices(): RootServices {
         "fileService.applyWorkspaceFileSearchIgnoreTransform",
       ),
       writeWorkspaceFileSearchIgnore: unsupported("fileService.writeWorkspaceFileSearchIgnore"),
+      writeTextFile: unsupported("fileService.writeTextFile"),
+      copyItem: unsupported("fileService.copyItem"),
+      moveItem: unsupported("fileService.moveItem"),
+      deleteItem: unsupported("fileService.deleteItem"),
+      createDirectory: unsupported("fileService.createDirectory"),
     },
     mediaPreviewService:
       createUnsupportedHomeOnlyService<NonNullable<RootServices["mediaPreviewService"]>>(

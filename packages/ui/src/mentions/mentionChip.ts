@@ -24,5 +24,11 @@ export function getPromptMentionVariantClassName(category: MentionCategory): str
   if (category === "whiteboards") {
     return "text-file-node-foreground";
   }
+  if (category === "attachments") {
+    return "text-attachment-node-foreground";
+  }
+  if (category === "contexts") {
+    return "text-context-node-foreground";
+  }
   return "text-file-node-foreground";
 }

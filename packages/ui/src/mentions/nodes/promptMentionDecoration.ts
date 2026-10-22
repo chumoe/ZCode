@@ -9,12 +9,19 @@ import type { MentionCategory, MentionItemData } from "@/mentions/mentionTypes.j
 import {
   COMMAND_MENTION_ICON_NODE,
   COMPACT_COMMAND_MENTION_ICON_NODE,
+  CONVERSATION_SELECTION_ICON_NODE,
+  CODE_COMMENT_ICON_NODE,
   createMentionSvgIcon,
+  FILE_ATTACHMENT_ICON_NODE,
   GOAL_COMMAND_MENTION_ICON_NODE,
+  IMAGE_ATTACHMENT_ICON_NODE,
   PLUGIN_MENTION_ICON_NODE,
+  PPTX_ICON_NODE,
   SESSION_MENTION_ICON_NODE,
   SKILL_MENTION_ICON_NODE,
   SUBAGENT_MENTION_ICON_NODE,
+  VIDEO_ATTACHMENT_ICON_NODE,
+  WEB_ELEMENT_ICON_NODE,
   WHITEBOARD_MENTION_ICON_NODE,
   WORKFLOW_COMMAND_MENTION_ICON_NODE,
   type MentionLucideIconNode,
@@ -79,6 +86,32 @@ export function decoratePromptMention(
         dom.style.setProperty("--mention-image", cssUrl(INLINE_FALLBACK_FILE_ICON_SRC));
       }),
     );
+    return;
+  }
+  if (category === "attachments") {
+    const attachmentType = data?.attachmentType;
+    const icon =
+      attachmentType === "image"
+        ? IMAGE_ATTACHMENT_ICON_NODE
+        : attachmentType === "video"
+          ? VIDEO_ATTACHMENT_ICON_NODE
+          : attachmentType === "web-element"
+            ? WEB_ELEMENT_ICON_NODE
+            : FILE_ATTACHMENT_ICON_NODE;
+    setMask(dom, icon);
+    return;
+  }
+  if (category === "contexts") {
+    const attachmentType = data?.attachmentType;
+    const icon =
+      attachmentType === "code-comment"
+        ? CODE_COMMENT_ICON_NODE
+        : attachmentType === "pptx"
+          ? PPTX_ICON_NODE
+          : attachmentType === "conversation-selection"
+            ? CONVERSATION_SELECTION_ICON_NODE
+            : CODE_COMMENT_ICON_NODE;
+    setMask(dom, icon);
     return;
   }
   const command = value.trim().replace(/^\/+/, "");

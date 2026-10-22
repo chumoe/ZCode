@@ -14,7 +14,10 @@ import {
 import { createGroupDeliveryThrottle } from "#src/bots/groupDeliveryThrottle.js";
 import { createGroupResultDelivery } from "#src/bots/groupResultDelivery.js";
 import { createGroupQueueCardSync } from "#src/bots/groupQueueCard.js";
-import { readAuthorizedTopicResource, authorizeTopicResource } from "#src/bots/topicResource.js";
+import {
+  readAuthorizedTopicResource,
+  authorizeTopicResource,
+} from "#src/bots/topicResource.js";
 import {
   getBotConversationKey,
   getBotStateKey,
@@ -139,11 +142,20 @@ import type {
 import { createTelegramBotProvider } from "./providers/telegramProvider.js";
 import { createWebhookBotProvider } from "./providers/webhookProvider.js";
 import { createWeixinBotProvider } from "./providers/weixinProvider.js";
+import { createQQBotProvider } from "./providers/qqProvider.js";
 import {
   beginWeixinRegistration as beginWeixinQrRegistration,
   pollWeixinRegistration as pollWeixinQrRegistration,
 } from "./providers/weixinRegistration.js";
-import { createFeishuBotProvider, splitFeishuText } from "./providers/feishuProvider.js";
+import {
+  beginQQRegistration as beginQQRegistrationFlow,
+  pollQQRegistration as pollQQRegistrationFlow,
+  cancelQQRegistration as cancelQQRegistrationFlow,
+} from "./providers/qqRegistration.js";
+import {
+  createFeishuBotProvider,
+  splitFeishuText,
+} from "./providers/feishuProvider.js";
 import { formatBotMessage, type BotMessageId } from "./messages.js";
 import {
   extractBotAssistantResponseMessages,
@@ -192,11 +204,14 @@ import { createTelegramChannelRuntime } from "./telegramChannelRuntime.js";
 import { createBotTaskStreamHub } from "#src/bots/taskStreamHub.js";
 import { createWeixinChannelRuntime } from "./weixinChannelRuntime.js";
 import { createFeishuChannelRuntime } from "./feishuChannelRuntime.js";
+import { createQQChannelRuntime } from "./qqChannelRuntime.js";
 import { registerMemoryDiagnosticsProvider } from "#src/memoryDiagnostics.js";
 
 const botsLogger = createServiceLogger("bots");
 
-function formatBotModelSelectionValue(selection: ModelSelection | undefined): string | undefined {
+function formatBotModelSelectionValue(
+  selection: ModelSelection | undefined,
+): string | undefined {
   if (!selection) return undefined;
   return selection.providerId === ZCODE_AGENT_PROVIDER
     ? selection.modelId
@@ -215,19 +230,34 @@ function parseBotModelOptionValue(value: string): ModelSelection | undefined {
       modelId: value.slice(separatorIndex + 1),
     };
   }
-  return value.trim() ? { providerId: ZCODE_AGENT_PROVIDER, modelId: value.trim() } : undefined;
+  return value.trim()
+    ? { providerId: ZCODE_AGENT_PROVIDER, modelId: value.trim() }
+    : undefined;
 }
 
 const BOT_REPLY_GRANULARITY_OPTIONS = [
   {
     id: "assistant_changes",
     label: { "zh-CN": "标准回复", "en-US": "Standard reply" },
-    aliases: ["assistant", "assistant_changes", "normal", "default", "standard", "标准回复"],
+    aliases: [
+      "assistant",
+      "assistant_changes",
+      "normal",
+      "default",
+      "standard",
+      "标准回复",
+    ],
   },
   {
     id: "assistant_toolcalls_changes",
     label: { "zh-CN": "完整回复", "en-US": "Full reply" },
-    aliases: ["full", "tool", "toolcalls", "assistant_toolcalls_changes", "完整回复"],
+    aliases: [
+      "full",
+      "tool",
+      "toolcalls",
+      "assistant_toolcalls_changes",
+      "完整回复",
+    ],
   },
   {
     id: "summary_changes",
@@ -245,7 +275,11 @@ const BOT_REPLY_GRANULARITY_OPTIONS = [
   aliases: readonly string[];
 }>;
 
-const BOT_EXCLUSIVE_CREDENTIAL_PROVIDERS = new Set<BotProvider>(["telegram", "feishu", "lark"]);
+const BOT_EXCLUSIVE_CREDENTIAL_PROVIDERS = new Set<BotProvider>([
+  "telegram",
+  "feishu",
+  "lark",
+]);
 const FEISHU_STREAMING_CARD_MIN_UPDATE_INTERVAL_MS = 1_000;
 const FEISHU_STREAMING_CARD_REQUEST_TIMEOUT_MS = 15_000;
 const FEISHU_STREAMING_CARD_FAILURE_BACKOFF_BASE_MS = 1_000;
@@ -273,7 +307,10 @@ const helpMessageByCommand = {
   mode: "helpMode",
   thoughtLevel: "helpThoughtLevel",
   reply: "helpReply",
-} as const satisfies Record<(typeof BOT_MENU_COMMAND_ORDER)[number], BotMessageId>;
+} as const satisfies Record<
+  (typeof BOT_MENU_COMMAND_ORDER)[number],
+  BotMessageId
+>;
 
 function validateBotConfig(config: BotsConfigFile, candidate: BotConfig): void {
   if (!candidate.id.trim()) {
@@ -409,7 +446,9 @@ function readNestedString(
   key: string,
 ): string | undefined {
   const nested = value?.[key];
-  return typeof nested === "string" && nested.trim().length > 0 ? nested : undefined;
+  return typeof nested === "string" && nested.trim().length > 0
+    ? nested
+    : undefined;
 }
 
 function summarizeCallbackPayload(payload: unknown): string {
@@ -440,9 +479,14 @@ function normalizeText(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function getReplyGranularityOptions(locale: Locale | undefined, provider?: BotProvider) {
+function getReplyGranularityOptions(
+  locale: Locale | undefined,
+  provider?: BotProvider,
+) {
   const messageLocale = locale === "en-US" ? "en-US" : "zh-CN";
-  const supportedIds = provider ? new Set(getSupportedBotReplyGranularities(provider)) : null;
+  const supportedIds = provider
+    ? new Set(getSupportedBotReplyGranularities(provider))
+    : null;
   return BOT_REPLY_GRANULARITY_OPTIONS.filter(
     (option) => !supportedIds || supportedIds.has(option.id),
   ).map((option) => ({
@@ -469,7 +513,9 @@ function resolveReplyGranularityByValue(
       normalizeText(item.label["zh-CN"]) === normalized ||
       normalizeText(item.label["en-US"]) === normalized,
   );
-  return option ? (options.find((item) => item.id === option.id) ?? null) : null;
+  return option
+    ? (options.find((item) => item.id === option.id) ?? null)
+    : null;
 }
 
 function resolveOptionByValue<T extends { id: string; label: string }>(
@@ -484,7 +530,9 @@ function resolveOptionByValue<T extends { id: string; label: string }>(
   const normalized = normalizeText(trimmed);
   return (
     items.find(
-      (item) => normalizeText(item.id) === normalized || normalizeText(item.label) === normalized,
+      (item) =>
+        normalizeText(item.id) === normalized ||
+        normalizeText(item.label) === normalized,
     ) ?? null
   );
 }
@@ -506,21 +554,41 @@ function createOutbound(
     botId: actor.botId,
     provider: actor.provider,
     providerUserId: actor.chatId ?? actor.providerUserId,
-    ...(isFeishuBotProvider(actor.provider) && actor.chatType === "group" && actor.providerMessageId
+    chatType: actor.chatType,
+    ...(isFeishuBotProvider(actor.provider) &&
+    actor.chatType === "group" &&
+    actor.providerMessageId
       ? {
           replyToMessageId: actor.providerMessageId,
           mentionedUserIds:
-            !actor.threadId || actor.mentionedBot === true ? [actor.providerUserId] : undefined,
+            !actor.threadId || actor.mentionedBot === true
+              ? [actor.providerUserId]
+              : undefined,
         }
       : {}),
-    ...(actor.threadId ? { threadId: actor.threadId, rootMessageId: actor.rootMessageId } : {}),
+    ...(actor.provider === "qq" &&
+    actor.chatType === "group" &&
+    actor.providerMessageId
+      ? {
+          replyToMessageId: actor.providerMessageId,
+          mentionedUserIds:
+            !actor.threadId || actor.mentionedBot === true
+              ? [actor.providerUserId]
+              : undefined,
+        }
+      : {}),
+    ...(actor.threadId
+      ? { threadId: actor.threadId, rootMessageId: actor.rootMessageId }
+      : {}),
     ...(actor.conversationThreadId !== undefined
       ? { conversationThreadId: actor.conversationThreadId }
       : {}),
     text,
     ...(selection ? { selection } : {}),
     ...extras,
-    ...(actor.providerContextToken ? { providerContextToken: actor.providerContextToken } : {}),
+    ...(actor.providerContextToken
+      ? { providerContextToken: actor.providerContextToken }
+      : {}),
   };
 }
 
@@ -535,14 +603,20 @@ function groupCardFor(
     threadId,
     taskId: context.activeTaskId,
     authorizationId: group.authorizationId!,
-    ...(threadId !== group.threadId ? { conversationThreadId: group.threadId ?? null } : {}),
+    ...(threadId !== group.threadId
+      ? { conversationThreadId: group.threadId ?? null }
+      : {}),
   };
 }
 
 function resolveAutomationBotDeliveryTarget(
   actor: BotActor,
 ): ZCodeAutomationBotDeliveryTarget | undefined {
-  if (actor.provider !== "feishu" && actor.provider !== "lark" && actor.provider !== "weixin") {
+  if (
+    actor.provider !== "feishu" &&
+    actor.provider !== "lark" &&
+    actor.provider !== "weixin"
+  ) {
     return undefined;
   }
   const providerUserId = actor.chatId?.trim() || actor.providerUserId.trim();
@@ -552,11 +626,16 @@ function resolveAutomationBotDeliveryTarget(
     botId: actor.botId,
     providerUserId,
     chatType: actor.chatType,
-    ...(actor.threadId ? { threadId: actor.threadId, rootMessageId: actor.rootMessageId } : {}),
+    ...(actor.threadId
+      ? { threadId: actor.threadId, rootMessageId: actor.rootMessageId }
+      : {}),
   };
 }
 
-function formatSelectionFallback(selection: SelectionPrompt, locale?: Locale): string {
+function formatSelectionFallback(
+  selection: SelectionPrompt,
+  locale?: Locale,
+): string {
   const lines = selection.options.map((option, index) => {
     const description = option.description ? ` ${option.description}` : "";
     return `${index + 1}. ${option.label}${description}`;
@@ -566,7 +645,8 @@ function formatSelectionFallback(selection: SelectionPrompt, locale?: Locale): s
   if (selection.showCancel === false) {
     return `${selection.title}\n${lines.join("\n")}\n\n${formatBotMessage(locale, "selectionTextHintNoCancel")}`;
   }
-  const cancelLabel = selection.cancelLabel ?? formatBotMessage(locale, "selectionCancelOption");
+  const cancelLabel =
+    selection.cancelLabel ?? formatBotMessage(locale, "selectionCancelOption");
   return `${selection.title}\n0. ${cancelLabel}\n${lines.join("\n")}\n\n${formatBotMessage(locale, "selectionTextHint")}`;
 }
 
@@ -592,8 +672,11 @@ function getBotPermissionOptionDisplayKind(
   const isAlways =
     /\b(always|persistent|permanent|remember)\b/u.test(text) ||
     /始终|永久|记住|不再询问/u.test(text);
-  const isAllow = /\b(allow|approve|accept|yes)\b/u.test(text) || /允许|同意|批准/u.test(text);
-  const isReject = /\b(deny|reject|decline|no)\b/u.test(text) || /拒绝|不允许|否/u.test(text);
+  const isAllow =
+    /\b(allow|approve|accept|yes)\b/u.test(text) ||
+    /允许|同意|批准/u.test(text);
+  const isReject =
+    /\b(deny|reject|decline|no)\b/u.test(text) || /拒绝|不允许|否/u.test(text);
   if (isAllow) {
     return isAlways ? "allowAlways" : "allowOnce";
   }
@@ -607,13 +690,18 @@ function sortBotPermissionOptions(
   options: readonly ZCodePermissionOption[],
 ): ZCodePermissionOption[] {
   return [...options].sort((left, right) => {
-    const leftPriority = BOT_PERMISSION_OPTION_PRIORITY[getBotPermissionOptionDisplayKind(left)];
-    const rightPriority = BOT_PERMISSION_OPTION_PRIORITY[getBotPermissionOptionDisplayKind(right)];
+    const leftPriority =
+      BOT_PERMISSION_OPTION_PRIORITY[getBotPermissionOptionDisplayKind(left)];
+    const rightPriority =
+      BOT_PERMISSION_OPTION_PRIORITY[getBotPermissionOptionDisplayKind(right)];
     return leftPriority - rightPriority;
   });
 }
 
-function formatBotPermissionOptionLabel(option: ZCodePermissionOption, locale?: Locale): string {
+function formatBotPermissionOptionLabel(
+  option: ZCodePermissionOption,
+  locale?: Locale,
+): string {
   const displayKind = getBotPermissionOptionDisplayKind(option);
   if (locale === "en-US") {
     switch (displayKind) {
@@ -645,7 +733,10 @@ function formatBotPermissionOptionLabel(option: ZCodePermissionOption, locale?: 
 
 function formatBotPermissionOptionDescription(
   option: ZCodePermissionOption,
-  request: Pick<ZCodePermissionRequest, "title" | "description" | "kind" | "raw">,
+  request: Pick<
+    ZCodePermissionRequest,
+    "title" | "description" | "kind" | "raw"
+  >,
   locale?: Locale,
 ): string | undefined {
   const displayKind = getBotPermissionOptionDisplayKind(option);
@@ -713,7 +804,10 @@ function stripModelProviderDescriptionsForTextSelection(
   };
 }
 
-function formatWorkspaceOptionLabel(workspace: BotWorkspaceRef, locale?: Locale): string {
+function formatWorkspaceOptionLabel(
+  workspace: BotWorkspaceRef,
+  locale?: Locale,
+): string {
   if (!workspace.workspaceIdentity) {
     return workspace.label;
   }
@@ -753,7 +847,9 @@ export function createBotsService(
     string,
     IDisposable & { automation(runId?: string): void; imInput(): void }
   >();
-  const taskStreamHub = createBotTaskStreamHub<ZCodeStreamEvent | TaskStreamMirrorableEvent>();
+  const taskStreamHub = createBotTaskStreamHub<
+    ZCodeStreamEvent | TaskStreamMirrorableEvent
+  >();
   const failedPrivateDeliveries = new Map<
     string,
     {
@@ -781,7 +877,10 @@ export function createBotsService(
     }
   >();
   const typingIntervals = new Map<string, ReturnType<typeof setInterval>>();
-  const typingTargets = new Map<string, { bot: BotConfig; target: BotTypingTarget }>();
+  const typingTargets = new Map<
+    string,
+    { bot: BotConfig; target: BotTypingTarget }
+  >();
   const runningTasks = new Set<string>();
   const topicContinuations = new Map<
     string,
@@ -795,7 +894,10 @@ export function createBotsService(
   const publishTopicPreparation = () =>
     deps.broadcastService?.send({ channel: "bots:group-state", payload: {} });
   const topicGenerations = new Map<string, number>();
-  const topicReplies = new Map<string, Map<string, (replies: BotOutboundMessage[]) => void>>();
+  const topicReplies = new Map<
+    string,
+    Map<string, (replies: BotOutboundMessage[]) => void>
+  >();
 
   const liveStatusProgressByTaskId = new Map<
     string,
@@ -810,12 +912,18 @@ export function createBotsService(
     typingIntervals: typingIntervals.size,
     liveStatusProgress: liveStatusProgressByTaskId.size,
   }));
-  const pendingTaskSelectionsByContext = new Map<string, Map<string, BotTaskSelectionEntry>>();
+  const pendingTaskSelectionsByContext = new Map<
+    string,
+    Map<string, BotTaskSelectionEntry>
+  >();
   const pendingWorkspaceSelectionsByContext = new Map<
     string,
     Map<string, BotWorkspaceSelectionEntry>
   >();
-  const pendingRemoteReconnectsByKey = new Map<string, Promise<BotOutboundMessage[]>>();
+  const pendingRemoteReconnectsByKey = new Map<
+    string,
+    Promise<BotOutboundMessage[]>
+  >();
   const recentRemoteReconnectAtByKey = new Map<string, number>();
   const recentRemoteReconnectDeliveryAtByKey = new Map<string, number>();
   const recentInboundDeliveryAtByKey = new Map<string, number>();
@@ -840,6 +948,9 @@ export function createBotsService(
     weixin: createWeixinBotProvider({
       loadCredential: (key) => deps.credentialService.load(key),
     }),
+    qq: createQQBotProvider({
+      loadCredential: (key) => deps.credentialService.load(key),
+    }),
     discord: null,
     wecom: null,
   };
@@ -849,7 +960,10 @@ export function createBotsService(
   };
   let shutdownPromise: Promise<void> | null = null;
 
-  function onDeliveryResult(bot: BotConfig, deliveryError: string | undefined): void {
+  function onDeliveryResult(
+    bot: BotConfig,
+    deliveryError: string | undefined,
+  ): void {
     // 收消息正常不代表回复已投递，不能把投递错误混成连接错误。
     const current = runtimeByBotId.get(bot.id);
     setRuntimeStatus({
@@ -857,7 +971,10 @@ export function createBotsService(
       provider: bot.provider,
       status: current?.status ?? (bot.enabled ? "idle" : "disabled"),
       deliveryError:
-        deliveryError ?? (failedPrivateDeliveries.has(bot.id) ? current?.deliveryError : undefined),
+        deliveryError ??
+        (failedPrivateDeliveries.has(bot.id)
+          ? current?.deliveryError
+          : undefined),
     });
   }
 
@@ -910,8 +1027,19 @@ export function createBotsService(
       botHistoryEpoch.set(botId, (botHistoryEpoch.get(botId) ?? 0) + 1),
     processProviderCallback,
   });
+  const qqRuntime = createQQChannelRuntime({
+    runBackgroundTasks: runStartupBackgroundTasks,
+    credentialService: deps.credentialService,
+    logger: botsLogger,
+    statusSink,
+    ensureBotStorageMigrated,
+    readConfig: () => repo.readConfig(),
+    processProviderCallback,
+  });
 
-  async function readTelegramOffset(botId: string): Promise<number | undefined> {
+  async function readTelegramOffset(
+    botId: string,
+  ): Promise<number | undefined> {
     return (await repo.readState()).bots[botId]?.telegramOffset;
   }
 
@@ -919,7 +1047,9 @@ export function createBotsService(
     await updateProviderCursor(botId, { telegramOffset: offset });
   }
 
-  async function readWeixinGetUpdatesBuf(botId: string): Promise<string | undefined> {
+  async function readWeixinGetUpdatesBuf(
+    botId: string,
+  ): Promise<string | undefined> {
     return (await repo.readState()).bots[botId]?.weixinGetUpdatesBuf;
   }
 
@@ -950,7 +1080,10 @@ export function createBotsService(
     });
   }
 
-  async function readContext(actor: BotActor, bot: BotConfig): Promise<BotContextState | null> {
+  async function readContext(
+    actor: BotActor,
+    bot: BotConfig,
+  ): Promise<BotContextState | null> {
     await ensureBotStorageMigrated();
     const state = await repo.readState();
     const existing = state.bots[getBotConversationKey(actor)];
@@ -978,15 +1111,26 @@ export function createBotsService(
       if (!actor.threadId) return null;
       const parent =
         state.bots[
-          getBotConversationKey({ ...actor, threadId: undefined, conversationThreadId: undefined })
+          getBotConversationKey({
+            ...actor,
+            threadId: undefined,
+            conversationThreadId: undefined,
+          })
         ];
-      if (!parent?.group?.enabled || parent.group.ownerId !== bot.providerUserId) return null;
+      if (
+        !parent?.group?.enabled ||
+        parent.group.ownerId !== bot.providerUserId
+      )
+        return null;
       let topicTitle = actor.topicTitle;
       let topicUrl = actor.topicUrl;
       let rootMessageId = actor.rootMessageId;
       if (!topicTitle && actor.providerMessageId) {
         try {
-          const resolved = await providers[bot.provider]?.resolveTopic?.(bot, actor);
+          const resolved = await providers[bot.provider]?.resolveTopic?.(
+            bot,
+            actor,
+          );
           topicTitle = resolved?.topicTitle;
           topicUrl = resolved?.topicUrl;
           rootMessageId = resolved?.rootMessageId ?? rootMessageId;
@@ -1007,7 +1151,10 @@ export function createBotsService(
         mode: "draft",
         activeTaskId: null,
         updatedAt: Date.now(),
-        draftOptions: { ...(await buildActiveTaskDraftOptions(parent)), mode: "default" },
+        draftOptions: {
+          ...(await buildActiveTaskDraftOptions(parent)),
+          mode: "default",
+        },
         group: {
           chatId: parent.group.chatId,
           threadId: actor.threadId,
@@ -1061,10 +1208,18 @@ export function createBotsService(
 
   let stateWriteTail: Promise<void> = Promise.resolve();
   async function readQueueCardScope(key: string) {
-    const [botId, chatId, taskId, authorizationId, inputId, threadId] = JSON.parse(key) as string[];
+    const [botId, chatId, taskId, authorizationId, inputId, threadId] =
+      JSON.parse(key) as string[];
     const state = await repo.readState();
     const context =
-      state.bots[getBotConversationKey({ botId: botId!, chatType: "group", chatId, threadId })];
+      state.bots[
+        getBotConversationKey({
+          botId: botId!,
+          chatType: "group",
+          chatId,
+          threadId,
+        })
+      ];
     const bot = findBot(await repo.readConfig(), botId!);
     const input = context?.group?.inputs?.[inputId!];
     if (
@@ -1079,7 +1234,8 @@ export function createBotsService(
     return { state, context, bot, input };
   }
   const queueCards = createGroupQueueCardSync({
-    read: async (key) => (await readQueueCardScope(key))?.input.progress ?? undefined,
+    read: async (key) =>
+      (await readQueueCardScope(key))?.input.progress ?? undefined,
     mutate: async (key, update) => {
       let result: BotGroupInputProgress | undefined;
       await serializeStateWrite(async () => {
@@ -1161,9 +1317,14 @@ export function createBotsService(
         for (const [key, context] of Object.entries(state.bots)) {
           const group = context.group;
           if (!group) {
-            const before = previous.bots.find((item) => item.id === context.botId);
+            const before = previous.bots.find(
+              (item) => item.id === context.botId,
+            );
             const after = saved.bots.find((item) => item.id === context.botId);
-            if (changedBindings.has(context.botId) || before?.enabled !== after?.enabled) {
+            if (
+              changedBindings.has(context.botId) ||
+              before?.enabled !== after?.enabled
+            ) {
               if (
                 changedBindings.has(context.botId) &&
                 before?.provider === "weixin" &&
@@ -1175,16 +1336,23 @@ export function createBotsService(
               state.bots[key] = {
                 ...context,
                 privateBindingId: randomUUID(),
-                ...(changedBindings.has(context.botId) ? { privateRecipientId: undefined } : {}),
+                ...(changedBindings.has(context.botId)
+                  ? { privateRecipientId: undefined }
+                  : {}),
               };
               changed = true;
             }
             continue;
           }
           const current = saved.bots.find((bot) => bot.id === context.botId);
-          if (!changedBindings.has(context.botId) && current?.providerUserId === group.ownerId)
+          if (
+            !changedBindings.has(context.botId) &&
+            current?.providerUserId === group.ownerId
+          )
             continue;
-          const originalBot = previous.bots.find((bot) => bot.id === context.botId);
+          const originalBot = previous.bots.find(
+            (bot) => bot.id === context.botId,
+          );
           if (group.threadId && originalBot)
             invalidatedTopics.push({
               botId: context.botId,
@@ -1203,7 +1371,9 @@ export function createBotsService(
               deliveries: Object.fromEntries(
                 Object.entries(group.deliveries ?? {}).map(([id, result]) => [
                   id,
-                  result.status === "sent" ? result : { ...result, status: "invalidated" as const },
+                  result.status === "sent"
+                    ? result
+                    : { ...result, status: "invalidated" as const },
                 ]),
               ),
             },
@@ -1220,7 +1390,9 @@ export function createBotsService(
       await deps.broadcastService
         ?.send({ channel: "bots:group-state", payload: {} })
         .catch(() => undefined);
-    for (const botId of new Set([...previous.bots, ...saved.bots].map((item) => item.id)))
+    for (const botId of new Set(
+      [...previous.bots, ...saved.bots].map((item) => item.id),
+    ))
       await reconcilePrivateSynchronization(botId);
     return saved;
   }
@@ -1250,7 +1422,8 @@ export function createBotsService(
           !updateAuthorization &&
           latestGroup &&
           (latestGroup.authorizationId !== context.group.authorizationId ||
-            (expectedTaskId !== undefined && latest?.activeTaskId !== expectedTaskId))
+            (expectedTaskId !== undefined &&
+              latest?.activeTaskId !== expectedTaskId))
         )
           return;
         const group =
@@ -1262,40 +1435,61 @@ export function createBotsService(
                 authorizationId: latestGroup.authorizationId,
                 // 其他话题可能已更新群级历史开关，旧输入回写不能覆盖最新配置。
                 historyEnabled: latestGroup.historyEnabled,
-                topicActive: latestGroup.topicActive ?? context.group.topicActive,
-                taskIds: [...new Set([...latestGroup.taskIds, ...context.group.taskIds])],
+                topicActive:
+                  latestGroup.topicActive ?? context.group.topicActive,
+                taskIds: [
+                  ...new Set([
+                    ...latestGroup.taskIds,
+                    ...context.group.taskIds,
+                  ]),
+                ],
                 // 已确认的 admission 是终态，迟到的流事件不能写回 pending。
                 inputs: Object.fromEntries(
-                  Object.entries({ ...latestGroup.inputs, ...context.group.inputs }).map(
-                    ([id, input]) => {
-                      const latestInput = latestGroup.inputs?.[id];
-                      const selected =
-                        latestInput?.admission === "accepted" ||
-                        latestInput?.admission === "rejected"
-                          ? latestInput
-                          : input;
-                      // 流事件可能先于 admission 返回；写回接收结果时保留已推进的卡片状态。
-                      return [
-                        id,
-                        { ...selected, progress: latestInput?.progress ?? selected.progress },
-                      ];
-                    },
-                  ),
+                  Object.entries({
+                    ...latestGroup.inputs,
+                    ...context.group.inputs,
+                  }).map(([id, input]) => {
+                    const latestInput = latestGroup.inputs?.[id];
+                    const selected =
+                      latestInput?.admission === "accepted" ||
+                      latestInput?.admission === "rejected"
+                        ? latestInput
+                        : input;
+                    // 流事件可能先于 admission 返回；写回接收结果时保留已推进的卡片状态。
+                    return [
+                      id,
+                      {
+                        ...selected,
+                        progress: latestInput?.progress ?? selected.progress,
+                      },
+                    ];
+                  }),
                 ),
-                taskWorkspaces: { ...latestGroup.taskWorkspaces, ...context.group.taskWorkspaces },
+                taskWorkspaces: {
+                  ...latestGroup.taskWorkspaces,
+                  ...context.group.taskWorkspaces,
+                },
                 topicAliases: latestGroup.topicAliases,
                 deliveries: latestGroup.deliveries,
               }
             : context.group;
         // 自动互答次数由入口串行持久化；迟到的任务/授权回写不能用旧快照恢复额度。
-        if (group && latestGroup?.autoReplyGuard) group.autoReplyGuard = latestGroup.autoReplyGuard;
+        if (group && latestGroup?.autoReplyGuard)
+          group.autoReplyGuard = latestGroup.autoReplyGuard;
         // 背景检查点由入口/接收提交更新，旧任务快照不能覆盖或复活它。
-        if (group && latestGroup) group.backgroundHistory = latestGroup.backgroundHistory;
-        if (group && (!group.enabled || state.bots[key]?.activeTaskId !== context.activeTaskId)) {
+        if (group && latestGroup)
+          group.backgroundHistory = latestGroup.backgroundHistory;
+        if (
+          group &&
+          (!group.enabled ||
+            state.bots[key]?.activeTaskId !== context.activeTaskId)
+        ) {
           group.deliveries = Object.fromEntries(
             Object.entries(group.deliveries ?? {}).map(([id, entry]) => [
               id,
-              entry.status === "sent" ? entry : { ...entry, status: "invalidated" as const },
+              entry.status === "sent"
+                ? entry
+                : { ...entry, status: "invalidated" as const },
             ]),
           );
         }
@@ -1311,8 +1505,14 @@ export function createBotsService(
             ? {
                 privateBindingId:
                   latest?.activeTaskId === context.activeTaskId &&
-                  getWorkspaceKey(latest.workspacePath, latest.workspaceIdentity) ===
-                    getWorkspaceKey(context.workspacePath, context.workspaceIdentity)
+                  getWorkspaceKey(
+                    latest.workspacePath,
+                    latest.workspaceIdentity,
+                  ) ===
+                    getWorkspaceKey(
+                      context.workspacePath,
+                      context.workspaceIdentity,
+                    )
                     ? (latest.privateBindingId ?? randomUUID())
                     : randomUUID(),
               }
@@ -1356,12 +1556,14 @@ export function createBotsService(
                 ownerId: group.ownerId,
                 authorizationId: group.authorizationId,
                 deliveries: Object.fromEntries(
-                  Object.entries(topic.group.deliveries ?? {}).map(([id, result]) => [
-                    id,
-                    result.status === "sent"
-                      ? result
-                      : { ...result, status: "invalidated" as const },
-                  ]),
+                  Object.entries(topic.group.deliveries ?? {}).map(
+                    ([id, result]) => [
+                      id,
+                      result.status === "sent"
+                        ? result
+                        : { ...result, status: "invalidated" as const },
+                    ],
+                  ),
                 ),
               },
             };
@@ -1372,7 +1574,9 @@ export function createBotsService(
     stateWriteTail = next;
     await next;
     if (!context.group) {
-      context.privateBindingId = (await repo.readState()).bots[context.botId]?.privateBindingId;
+      context.privateBindingId = (await repo.readState()).bots[
+        context.botId
+      ]?.privateBindingId;
       await reconcilePrivateSynchronization(context.botId);
     }
     if (context.group)
@@ -1403,14 +1607,22 @@ export function createBotsService(
       .then(() => restorePrivateSynchronization(botId))
       .catch(async (error: unknown) => {
         const bot = findBot(await repo.readConfig(), botId);
-        if (bot) onDeliveryResult(bot, error instanceof Error ? error.message : String(error));
-        botsLogger.warn(undefined, `Private Bot subscription failed bot=${botId}`);
+        if (bot)
+          onDeliveryResult(
+            bot,
+            error instanceof Error ? error.message : String(error),
+          );
+        botsLogger.warn(
+          undefined,
+          `Private Bot subscription failed bot=${botId}`,
+        );
       });
     privateReconciliations.set(botId, pending);
     try {
       await pending;
     } finally {
-      if (privateReconciliations.get(botId) === pending) privateReconciliations.delete(botId);
+      if (privateReconciliations.get(botId) === pending)
+        privateReconciliations.delete(botId);
     }
   }
 
@@ -1418,7 +1630,9 @@ export function createBotsService(
     const bot = findBot(await repo.readConfig(), botId);
     let context = (await repo.readState()).bots[botId];
     const recipient =
-      bot?.provider === "weixin" ? context?.privateRecipientId : bot?.providerUserId;
+      bot?.provider === "weixin"
+        ? context?.privateRecipientId
+        : bot?.providerUserId;
     const valid =
       !shutdownPromise &&
       bot?.enabled &&
@@ -1429,7 +1643,8 @@ export function createBotsService(
       context.mode === "task" &&
       context.activeTaskId &&
       isWorkspaceAllowed(
-        context.workspaceId ?? getWorkspaceKey(context.workspacePath, context.workspaceIdentity),
+        context.workspaceId ??
+          getWorkspaceKey(context.workspacePath, context.workspaceIdentity),
         bot.allowedWorkspaces,
       ) &&
       (await isRemoteWorkspaceConnected(context));
@@ -1462,9 +1677,14 @@ export function createBotsService(
       failedPrivateDeliveries.delete(botId);
       const runtime = runtimeByBotId.get(botId);
       if (runtime)
-        setRuntimeStatus({ ...runtime, deliveryRetryId: undefined, deliveryError: undefined });
+        setRuntimeStatus({
+          ...runtime,
+          deliveryRetryId: undefined,
+          deliveryError: undefined,
+        });
     }
-    if (!valid || !bot || !context || !signature || privateWatches.has(botId)) return;
+    if (!valid || !bot || !context || !signature || privateWatches.has(botId))
+      return;
     if (!(await isRemoteWorkspaceConnected(context))) return;
     const taskService = await resolveZCodeTaskServiceForContext(context);
     const deleted = await taskService.listDeletedTaskIds?.({
@@ -1494,12 +1714,20 @@ export function createBotsService(
   function weixinContextKey(bot: BotConfig, userId: string): string {
     // 凭证按账号和接收人隔离；不进入普通 Bot 状态或日志。
     return `bot-weixin-context-${createHash("sha256")
-      .update(JSON.stringify([bot.id, bot.providerUserId, bot.credentialRef, userId]))
+      .update(
+        JSON.stringify([bot.id, bot.providerUserId, bot.credentialRef, userId]),
+      )
       .digest("hex")}`;
   }
 
-  async function capturePrivateContextToken(message: BotInboundMessage): Promise<void> {
-    if (message.actor.provider !== "weixin" || message.actor.chatType !== "private") return;
+  async function capturePrivateContextToken(
+    message: BotInboundMessage,
+  ): Promise<void> {
+    if (
+      message.actor.provider !== "weixin" ||
+      message.actor.chatType !== "private"
+    )
+      return;
     const bot = findAuthorizedBot(await repo.readConfig(), message.actor);
     if (!bot || bot.id !== message.botId) return;
     const context = await readContext(message.actor, bot);
@@ -1537,8 +1765,11 @@ export function createBotsService(
     streamSubscriptions.delete(key);
   }
 
-  async function restoreGroupSynchronization(context: BotContextState): Promise<void> {
-    if (!context.group?.enabled || !context.activeTaskId || shutdownPromise) return;
+  async function restoreGroupSynchronization(
+    context: BotContextState,
+  ): Promise<void> {
+    if (!context.group?.enabled || !context.activeTaskId || shutdownPromise)
+      return;
     const bot = findBot(await repo.readConfig(), context.botId);
     if (
       !bot?.enabled ||
@@ -1560,7 +1791,11 @@ export function createBotsService(
         providerUserId: context.group.ownerId,
       },
       context,
-      { ...bot, currentOptions: context.group.currentOptions, replyMode: "summary_changes" },
+      {
+        ...bot,
+        currentOptions: context.group.currentOptions,
+        replyMode: "summary_changes",
+      },
     );
   }
 
@@ -1573,7 +1808,7 @@ export function createBotsService(
     const bot = findBot(config, message.botId);
     if (
       !bot?.enabled ||
-      !isFeishuBotProvider(bot.provider) ||
+      (!isFeishuBotProvider(bot.provider) && bot.provider !== "qq") ||
       message.actor.chatType !== "group" ||
       !message.actor.chatId
     ) {
@@ -1595,8 +1830,15 @@ export function createBotsService(
     // 群启用不等于平台授权；首次与再次启用都提供同一权限入口。
     const activationValues = {
       permissionsUrl:
-        bot.provider === "lark" ? "https://open.larksuite.com/app" : "https://open.feishu.cn/app",
+        bot.provider === "lark"
+          ? "https://open.larksuite.com/app"
+          : bot.provider === "qq"
+            ? "https://q.qq.com/bot/developer"
+            : "https://open.feishu.cn/app",
     };
+    // QQ 的群启用文案与飞书话题权限说明不同，按 provider 区分。
+    const groupEnabledMessageId: BotMessageId =
+      bot.provider === "qq" ? "qqGroupEnabled" : "groupEnabled";
     const key = getBotConversationKey({
       ...message.actor,
       threadId: undefined,
@@ -1613,8 +1855,13 @@ export function createBotsService(
         await writeContext(updated, true);
         if (!enabled) await cancelGroupTopicInputs(message.actor);
         if (enabled) {
-          for (const candidate of Object.values((await repo.readState()).bots)) {
-            if (candidate.botId === bot.id && candidate.group?.chatId === message.actor.chatId)
+          for (const candidate of Object.values(
+            (await repo.readState()).bots,
+          )) {
+            if (
+              candidate.botId === bot.id &&
+              candidate.group?.chatId === message.actor.chatId
+            )
               await restoreGroupSynchronization(candidate);
           }
         }
@@ -1622,11 +1869,16 @@ export function createBotsService(
       return [
         createOutbound(
           message.actor,
-          msg(locale, enabled ? "groupEnabled" : "groupDisabled", activationValues),
+          msg(
+            locale,
+            enabled ? groupEnabledMessageId : "groupDisabled",
+            activationValues,
+          ),
         ),
       ];
     }
-    if (!enabled) return [createOutbound(message.actor, msg(locale, "groupDisabled"))];
+    if (!enabled)
+      return [createOutbound(message.actor, msg(locale, "groupDisabled"))];
     const privateContext = await readContext(
       { ...message.actor, chatType: "private", chatId: undefined },
       bot,
@@ -1641,7 +1893,10 @@ export function createBotsService(
         ),
       ];
     const inherited = await buildActiveTaskDraftOptions(privateContext);
-    const info = await providers[bot.provider]?.getGroupInfo?.(bot, message.actor.chatId);
+    const info = await providers[bot.provider]?.getGroupInfo?.(
+      bot,
+      message.actor.chatId,
+    );
     const context: BotContextState = {
       botId: bot.id,
       workspacePath: privateContext.workspacePath,
@@ -1667,7 +1922,12 @@ export function createBotsService(
       },
     };
     await writeContext(context, true);
-    return [createOutbound(message.actor, msg(locale, "groupEnabled", activationValues))];
+    return [
+      createOutbound(
+        message.actor,
+        msg(locale, groupEnabledMessageId, activationValues),
+      ),
+    ];
   }
 
   async function handleGroupHistory(
@@ -1694,7 +1954,10 @@ export function createBotsService(
     await serializeStateWrite(async () => {
       const state = await repo.readState();
       const parent = state.bots[key];
-      if (!parent?.group?.enabled || parent.group.ownerId !== message.actor.providerUserId)
+      if (
+        !parent?.group?.enabled ||
+        parent.group.ownerId !== message.actor.providerUserId
+      )
         throw new Error("Group authorization changed");
       if (enabled !== undefined) {
         parent.group.historyEnabled = enabled;
@@ -1739,7 +2002,10 @@ export function createBotsService(
     if (context.group) {
       const prefix = `${context.botId}::`;
       for (const key of pendingSelectionsByContext.keys()) {
-        if (key.startsWith(prefix) && key.includes(`::${context.group.chatId}::`)) {
+        if (
+          key.startsWith(prefix) &&
+          key.includes(`::${context.group.chatId}::`)
+        ) {
           pendingSelectionsByContext.delete(key);
           pendingTaskSelectionsByContext.delete(key);
           pendingWorkspaceSelectionsByContext.delete(key);
@@ -1785,9 +2051,103 @@ export function createBotsService(
     return [
       createOutbound(
         message.actor,
-        [msg(auth.locale, "weixinActivatedWelcome"), buildHelpText(auth.locale, auth.bot)].join(
-          "\n\n",
-        ),
+        [
+          msg(auth.locale, "weixinActivatedWelcome"),
+          buildHelpText(auth.locale, auth.bot),
+        ].join("\n\n"),
+      ),
+    ];
+  }
+
+  /**
+   * QQ 首条私聊消息激活：首个私聊发送者即默认主人。
+   *
+   * QQ 扫码注册把机器人 AppID 写入 providerUserId（凭据格式 "appId:appSecret"），
+   * 首条入站消息的发送者 openid 才是真正的主人。这里在首次私聊消息时把 AppID
+   * 迁移到 qqAppId，providerUserId 落成主人 openid（与 /bind 的迁移逻辑一致），
+   * 并写入 qqActivatedAt 标记，后续消息走正常分发。
+   */
+  async function handleQQFirstActivation(
+    message: BotInboundMessage,
+    command: BotCommand,
+  ): Promise<BotOutboundMessage[] | null> {
+    if (
+      message.actor.provider !== "qq" ||
+      message.actor.chatType !== "private" ||
+      command.type !== "message"
+    ) {
+      return null;
+    }
+    const state = await repo.readState();
+    const existing = state.bots[message.botId];
+    if (
+      existing?.qqActivatedAt ||
+      existing?.draftOptions ||
+      existing?.activeTaskId ||
+      existing?.pendingPermissionOptions ||
+      existing?.pendingElicitation
+    ) {
+      return null;
+    }
+    const config = await repo.readConfig();
+    const bot = findBot(config, message.botId);
+    if (!bot?.enabled || bot.provider !== "qq") {
+      return null;
+    }
+    const auth = await withAuthorizedContext(message, "help");
+    if (!auth.ok) {
+      return auth.reply;
+    }
+    if (auth.context.qqActivatedAt) {
+      return null;
+    }
+    // 已绑定过该用户（如手动 /bind 后），只补激活标记，不覆盖主人。
+    if (bot.providerUserId === message.actor.providerUserId) {
+      await writeContext({
+        ...auth.context,
+        qqActivatedAt: Date.now(),
+      });
+      return null;
+    }
+    // 迁移 AppID 到 qqAppId（凭据校验一致），providerUserId 落成首条发送者 openid。
+    let boundQQAppId = bot.qqAppId;
+    if (!boundQQAppId && bot.providerUserId?.trim()) {
+      const rawCredential = bot.credentialRef
+        ? await deps.credentialService.load(bot.credentialRef)
+        : null;
+      const credentialAppId = rawCredential
+        ? rawCredential.split(":")[0]?.trim()
+        : undefined;
+      if (credentialAppId && credentialAppId === bot.providerUserId.trim()) {
+        boundQQAppId = credentialAppId;
+      }
+    }
+    const nextBot: BotConfig = {
+      ...bot,
+      providerUserId: message.actor.providerUserId,
+      displayName: message.actor.displayName,
+      allowedCommands: normalizeBotCommandPolicy(bot.allowedCommands),
+      replyMode: normalizeBotReplyGranularity(bot.provider, bot.replyMode),
+      ...(boundQQAppId !== undefined ? { qqAppId: boundQQAppId } : {}),
+    };
+    validateBotConfig(config, nextBot);
+    await writeBotConfig({
+      ...config,
+      bots: config.bots.map((item) =>
+        item.id === nextBot.id ? nextBot : item,
+      ),
+    });
+    await writeContext({
+      ...auth.context,
+      qqActivatedAt: Date.now(),
+    });
+    return [
+      createOutbound(
+        message.actor,
+        [
+          msg(auth.locale, "qqActivatedWelcome"),
+          buildHelpText(auth.locale, nextBot),
+        ].join("\n\n"),
       ),
     ];
   }
@@ -1801,8 +2161,16 @@ export function createBotsService(
     reply: BotOutboundMessage,
   ): BotOutboundMessage {
     if (actor.chatType !== "group") return reply;
-    const mentionedUserIds = adminAttention.mention(actor, bot.providerUserId, reason);
-    return { ...reply, mentionedUserIds, administratorAttention: !!mentionedUserIds?.length };
+    const mentionedUserIds = adminAttention.mention(
+      actor,
+      bot.providerUserId,
+      reason,
+    );
+    return {
+      ...reply,
+      mentionedUserIds,
+      administratorAttention: !!mentionedUserIds?.length,
+    };
   }
 
   function administratorErrorReply(
@@ -1811,7 +2179,11 @@ export function createBotsService(
     error: unknown,
     reply: BotOutboundMessage,
   ): BotOutboundMessage {
-    if (!bot || actor.chatType !== "group" || !(error instanceof BotAdminRequiredError))
+    if (
+      !bot ||
+      actor.chatType !== "group" ||
+      !(error instanceof BotAdminRequiredError)
+    )
       return reply;
     const hint =
       error.reason === "model"
@@ -1842,11 +2214,15 @@ export function createBotsService(
   }
 
   function isSessionExpiredError(error: unknown): boolean {
-    const message = error instanceof Error ? error.message : String(error ?? "");
+    const message =
+      error instanceof Error ? error.message : String(error ?? "");
     return /\bSession (not found|is not active):/i.test(message);
   }
 
-  function formatUserFacingBotError(error: unknown, locale: Locale | undefined): string {
+  function formatUserFacingBotError(
+    error: unknown,
+    locale: Locale | undefined,
+  ): string {
     // Bugfix: 旧 bot 消息或脏 task index 会让协议层抛出 Session not found。
     // 直接把 session id 发给用户不可操作；这里保留日志原文，只引导用户新建任务恢复。
     if (isSessionExpiredError(error)) {
@@ -1857,7 +2233,9 @@ export function createBotsService(
 
   function sanitizeAttachmentFilename(filename: string): string {
     const normalized = Array.from(filename.trim())
-      .map((char) => (char.charCodeAt(0) < 32 || '\\/:*?"<>|'.includes(char) ? "_" : char))
+      .map((char) =>
+        char.charCodeAt(0) < 32 || '\\/:*?"<>|'.includes(char) ? "_" : char,
+      )
       .join("");
     return normalized.length > 0 ? normalized.slice(0, 160) : "attachment";
   }
@@ -1875,7 +2253,10 @@ export function createBotsService(
     return `${sizeBytes}B`;
   }
 
-  function formatAttachmentRejectedReason(error: unknown, locale: Locale | undefined): string {
+  function formatAttachmentRejectedReason(
+    error: unknown,
+    locale: Locale | undefined,
+  ): string {
     const message = error instanceof Error ? error.message : String(error);
     if (/exceeds 5MB/i.test(message)) {
       return msg(locale, "attachmentTooLarge");
@@ -1899,7 +2280,8 @@ export function createBotsService(
     providerMessageId?: string;
     attachment: BotInboundAttachment;
   }): string {
-    const messageKey = params.providerMessageId?.trim() || `message-${Date.now()}`;
+    const messageKey =
+      params.providerMessageId?.trim() || `message-${Date.now()}`;
     const digest = createHash("sha256")
       .update(`${params.botId}:${messageKey}:${params.attachment.id}`)
       .digest("hex")
@@ -1920,13 +2302,18 @@ export function createBotsService(
       return null;
     }
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), BOT_ATTACHMENT_DOWNLOAD_TIMEOUT_MS);
+    const timeout = setTimeout(
+      () => controller.abort(),
+      BOT_ATTACHMENT_DOWNLOAD_TIMEOUT_MS,
+    );
     try {
       const response = await fetch(attachment.downloadUrl, {
         signal: controller.signal,
       });
       if (!response.ok) {
-        throw new Error(`download ${attachment.filename} failed: HTTP ${response.status}`);
+        throw new Error(
+          `download ${attachment.filename} failed: HTTP ${response.status}`,
+        );
       }
       return new Uint8Array(await response.arrayBuffer());
     } catch (error) {
@@ -1958,7 +2345,11 @@ export function createBotsService(
       };
     }
     const provider = providers[bot.provider];
-    const downloaded = await provider?.downloadAttachment?.(bot, attachment, actor);
+    const downloaded = await provider?.downloadAttachment?.(
+      bot,
+      attachment,
+      actor,
+    );
     if (downloaded) {
       return downloaded;
     }
@@ -1992,18 +2383,28 @@ export function createBotsService(
     locale: Locale | undefined,
   ): Promise<PreparedBotMessageContent> {
     const isGroup = message.actor.chatType === "group";
-    if (isGroup && (message.attachments?.length ?? 0) > BOT_MAX_ATTACHMENTS_PER_MESSAGE) {
+    if (
+      isGroup &&
+      (message.attachments?.length ?? 0) > BOT_MAX_ATTACHMENTS_PER_MESSAGE
+    ) {
       throw new Error(
         locale === "en-US"
           ? "Attach at most 4 files per message."
           : "每条消息最多提交 4 个附件，请拆分后发送。",
       );
     }
-    const rawAttachments = (message.attachments ?? []).slice(0, BOT_MAX_ATTACHMENTS_PER_MESSAGE);
+    const rawAttachments = (message.attachments ?? []).slice(
+      0,
+      BOT_MAX_ATTACHMENTS_PER_MESSAGE,
+    );
     const zcodeAttachments: ZCodePromptAttachment[] = [];
     const fileLines: string[] = [];
     for (const rawAttachment of rawAttachments) {
-      const resolved = await resolveAttachmentBytes(bot, rawAttachment, message.actor);
+      const resolved = await resolveAttachmentBytes(
+        bot,
+        rawAttachment,
+        message.actor,
+      );
       if (!resolved) {
         if (isGroup) throw new Error("attachment download failed");
         fileLines.push(
@@ -2024,7 +2425,10 @@ export function createBotsService(
       if (isGroup) {
         // 旧兼容入口只把文件路径拼进正文，既丢失 V4 附件又破坏末尾引用块；群输入只走标准寄存。
         zcodeAttachments.push({
-          kind: cached.kind === "image" || cached.kind === "audio" ? cached.kind : "file",
+          kind:
+            cached.kind === "image" || cached.kind === "audio"
+              ? cached.kind
+              : "file",
           filename: cached.filename,
           mimeType: cached.mimeType,
           sizeBytes: resolved.data.byteLength,
@@ -2057,14 +2461,17 @@ export function createBotsService(
     }
     const trimmed = message.text.trim();
     const baseContent =
-      trimmed || (rawAttachments.length > 0 ? msg(locale, "attachmentOnlyPrompt") : "");
+      trimmed ||
+      (rawAttachments.length > 0 ? msg(locale, "attachmentOnlyPrompt") : "");
     return {
       content: [baseContent, ...fileLines].filter(Boolean).join("\n\n"),
       zcodeAttachments,
     };
   }
 
-  function requiresRemoteWorkspaceRuntime(requestedCommand: BotAuthorizedCommand): boolean {
+  function requiresRemoteWorkspaceRuntime(
+    requestedCommand: BotAuthorizedCommand,
+  ): boolean {
     return (
       requestedCommand !== "help" &&
       requestedCommand !== "status" &&
@@ -2164,7 +2571,11 @@ export function createBotsService(
       return null;
     }
     if (await isRemoteWorkspaceConnected(params.context)) {
-      adminAttention.clear(params.message.actor, params.context.group?.ownerId, "remote");
+      adminAttention.clear(
+        params.message.actor,
+        params.context.group?.ownerId,
+        "remote",
+      );
       return null;
     }
     // Bugfix: 普通消息、配置修改和权限响应不应该隐式改变远端连接状态。
@@ -2197,8 +2608,9 @@ export function createBotsService(
       ? normalizeBotReplyGranularity(provider, id)
       : (id ?? getDefaultBotReplyGranularity());
     return (
-      getReplyGranularityOptions(locale, provider).find((option) => option.id === currentId)
-        ?.label ?? currentId
+      getReplyGranularityOptions(locale, provider).find(
+        (option) => option.id === currentId,
+      )?.label ?? currentId
     );
   }
 
@@ -2230,7 +2642,10 @@ export function createBotsService(
   async function ensureBotStorageMigrated(): Promise<void> {
     // 单向导入已收口到 Repo；这里只等待初始化，不再读取旧模型字段或重写当前状态。
     if (!botStorageMigrationPromise) {
-      botStorageMigrationPromise = Promise.all([repo.readConfig(), repo.readState()])
+      botStorageMigrationPromise = Promise.all([
+        repo.readConfig(),
+        repo.readState(),
+      ])
         .then(() => undefined)
         .catch((error: unknown) => {
           botStorageMigrationPromise = null;
@@ -2255,7 +2670,8 @@ export function createBotsService(
     const category = configId === "thoughtLevel" ? "thought_level" : configId;
     return options.find(
       (item): item is ZCodeConfigOption & { type: "select" } =>
-        item.type === "select" && (item.category === category || item.id === category),
+        item.type === "select" &&
+        (item.category === category || item.id === category),
     );
   }
 
@@ -2283,7 +2699,9 @@ export function createBotsService(
     });
   }
 
-  function getConfigCommandMissingMessageId(configId: "mode" | "thoughtLevel"): BotMessageId {
+  function getConfigCommandMissingMessageId(
+    configId: "mode" | "thoughtLevel",
+  ): BotMessageId {
     return configId === "mode" ? "modeMissing" : "thoughtLevelMissing";
   }
 
@@ -2337,7 +2755,9 @@ export function createBotsService(
     context: Pick<BotContextState, "workspacePath" | "workspaceIdentity" | "hostId">,
     selection?: ModelSelection,
   ): Promise<ModelSelectionView | null> {
-    const service = await resolveModelSelectionServiceForContext(context).catch(() => null);
+    const service = await resolveModelSelectionServiceForContext(context).catch(
+      () => null,
+    );
     if (!service) return null;
     return service.getView
       .call(service, selection ? { selection } : undefined)
@@ -2381,14 +2801,18 @@ export function createBotsService(
     );
   }
 
-  function readModelProviderSelectionModels(provider: unknown): BotModelOption[] {
+  function readModelProviderSelectionModels(
+    provider: unknown,
+  ): BotModelOption[] {
     const models = isRecord(provider) ? provider.models : undefined;
     if (!Array.isArray(models)) {
       return [];
     }
     return models.filter(
       (model): model is BotModelOption =>
-        isRecord(model) && typeof model.id === "string" && typeof model.label === "string",
+        isRecord(model) &&
+        typeof model.id === "string" &&
+        typeof model.label === "string",
     );
   }
 
@@ -2396,9 +2820,9 @@ export function createBotsService(
     task: Pick<ZCodeTaskMeta, "model" | "workspacePath" | "workspaceIdentity">,
     activeProvider: ZCodeProvider,
   ): Promise<BotModelOption[]> {
-    return (await listModelProviderOptionsForActiveTask(task, activeProvider)).flatMap(
-      (provider) => provider.models,
-    );
+    return (
+      await listModelProviderOptionsForActiveTask(task, activeProvider)
+    ).flatMap((provider) => provider.models);
   }
 
   function readCurrentActiveTaskModel(
@@ -2417,7 +2841,8 @@ export function createBotsService(
     }
     const customModel = decodeCustomModelValue(model);
     if (customModel?.providerId) {
-      const modelSelectionOptions = await listModelSelectionProviderOptions(context);
+      const modelSelectionOptions =
+        await listModelSelectionProviderOptions(context);
       const providerLabel = modelSelectionOptions.find(
         (item) => item.id === customModel.providerId,
       )?.label;
@@ -2432,8 +2857,11 @@ export function createBotsService(
     }
     const providerId = model.slice(0, separatorIndex);
     const modelName = model.slice(separatorIndex + 1);
-    const modelSelectionOptions = await listModelSelectionProviderOptions(context);
-    const providerLabel = modelSelectionOptions.find((item) => item.id === providerId)?.label;
+    const modelSelectionOptions =
+      await listModelSelectionProviderOptions(context);
+    const providerLabel = modelSelectionOptions.find(
+      (item) => item.id === providerId,
+    )?.label;
     // Bugfix: /status 只应该暴露用户能识别的模型供应商名称。
     // 旧 bot-state 或 task config 可能保存成 providerId/modelId，providerId 对用户没有意义。
     return providerLabel ? `${providerLabel}/${modelName}` : model;
@@ -2453,8 +2881,9 @@ export function createBotsService(
       return customModel.providerId;
     }
     return (
-      (await listModelProviderOptionsForActiveTask(task, activeProvider)).find((provider) =>
-        provider.models.some((model) => model.id === currentValue),
+      (await listModelProviderOptionsForActiveTask(task, activeProvider)).find(
+        (provider) =>
+          provider.models.some((model) => model.id === currentValue),
       )?.id ?? getNativeModelProviderId(activeProvider)
     );
   }
@@ -2473,7 +2902,10 @@ export function createBotsService(
     options: readonly ZCodeConfigOption[],
     configId: "model" | "mode" | "thoughtLevel",
   ): string | undefined {
-    const currentValue = findSelectConfigOption(options, configId)?.currentValue;
+    const currentValue = findSelectConfigOption(
+      options,
+      configId,
+    )?.currentValue;
     return typeof currentValue === "string" ? currentValue : undefined;
   }
 
@@ -2520,8 +2952,9 @@ export function createBotsService(
       return undefined;
     }
     return (
-      listConfigSelectOptions(options, configId, context).find((option) => option.id === value)
-        ?.label ?? value
+      listConfigSelectOptions(options, configId, context).find(
+        (option) => option.id === value,
+      )?.label ?? value
     );
   }
 
@@ -2543,7 +2976,9 @@ export function createBotsService(
     });
   }
 
-  function normalizeBotDraftOptions(draftOptions: BotDraftOptions): BotDraftOptions {
+  function normalizeBotDraftOptions(
+    draftOptions: BotDraftOptions,
+  ): BotDraftOptions {
     // Bugfix: bot-state 里可能还残留旧三方 CLI 草稿 provider。
     // 如果直接复用，/new 后首条消息会重新创建第三方 runtime，绕过 ZCode Agent 单一事实源。
     return {
@@ -2559,7 +2994,10 @@ export function createBotsService(
     const requestedProvider = normalizeAgentProviderToZCodeAgent(
       provider ?? DEFAULT_BOT_ZCODE_PROVIDER,
     );
-    if (context.workspaceIdentity && !(await isRemoteWorkspaceConnected(context))) {
+    if (
+      context.workspaceIdentity &&
+      !(await isRemoteWorkspaceConnected(context))
+    ) {
       // Bugfix: 远端断连时初始化草稿也不能偷偷申请远端 ZCode Agent runtime。
       // 只有 /reconnect 能恢复连接；草稿先保留最小默认值，重连成功后再刷新。
       return { provider: requestedProvider };
@@ -2571,17 +3009,22 @@ export function createBotsService(
     };
   }
 
-  async function buildActiveTaskDraftOptions(context: BotContextState): Promise<BotDraftOptions> {
+  async function buildActiveTaskDraftOptions(
+    context: BotContextState,
+  ): Promise<BotDraftOptions> {
     const activeTask = await readContextActiveTaskMeta(context);
     if (!context.activeTaskId || !activeTask?.provider) {
       return context.draftOptions
         ? normalizeBotDraftOptions(context.draftOptions)
         : buildInitializedDraftOptions(context);
     }
-    const configOptions = await listActiveTaskConfigOptions(context, context.activeTaskId).catch(
-      () => [],
+    const configOptions = await listActiveTaskConfigOptions(
+      context,
+      context.activeTaskId,
+    ).catch(() => []);
+    const resolvedProvider = normalizeAgentProviderToZCodeAgent(
+      activeTask.provider,
     );
-    const resolvedProvider = normalizeAgentProviderToZCodeAgent(activeTask.provider);
     // Bot 硬锁 yolo：继承当前 task 时也强制 yolo，不沿用原 task 的 mode。
     const forcedMode = resolveSupportedDraftMode(
       configOptions,
@@ -2601,11 +3044,18 @@ export function createBotsService(
     };
   }
 
-  async function ensureDraftOptions(context: BotContextState): Promise<BotDraftOptions> {
+  async function ensureDraftOptions(
+    context: BotContextState,
+  ): Promise<BotDraftOptions> {
     if (context.draftOptions) {
-      const normalizedDraftOptions = normalizeBotDraftOptions(context.draftOptions);
+      const normalizedDraftOptions = normalizeBotDraftOptions(
+        context.draftOptions,
+      );
       if (normalizedDraftOptions.provider !== context.draftOptions.provider) {
-        await writeContext({ ...context, draftOptions: normalizedDraftOptions });
+        await writeContext({
+          ...context,
+          draftOptions: normalizedDraftOptions,
+        });
       }
       return normalizedDraftOptions;
     }
@@ -2629,15 +3079,18 @@ export function createBotsService(
     return nextContext;
   }
 
-  async function resolveDraftOptionsForDisplay(context: BotContextState): Promise<BotDraftOptions> {
+  async function resolveDraftOptionsForDisplay(
+    context: BotContextState,
+  ): Promise<BotDraftOptions> {
     const original = await ensureDraftOptions(context);
     const view = await readModelSelectionView(context, original.modelSelection);
     // 菜单也必须展示派发将使用的身份。这里只返回副本；查看菜单不能写回原草稿。
     return {
       ...original,
       modelSelection:
-        (original.modelSelection ? view?.effectiveSelection : view?.preferredSelection) ??
-        undefined,
+        (original.modelSelection
+          ? view?.effectiveSelection
+          : view?.preferredSelection) ?? undefined,
     };
   }
 
@@ -2765,7 +3218,10 @@ export function createBotsService(
     pendingWorkspaceSelectionsByContext.delete(actorContextKey);
   }
 
-  function resolvePendingSelectionCommand(actor: BotActor, value: string): BotCommand | null {
+  function resolvePendingSelectionCommand(
+    actor: BotActor,
+    value: string,
+  ): BotCommand | null {
     const actorContextKey = getActorContextKey(actor);
     const selection = pendingSelectionsByContext.get(actorContextKey);
     if (!selection) {
@@ -2814,11 +3270,15 @@ export function createBotsService(
     }
   }
 
-  function shouldUseTransientInteractionCard(bot: BotConfig, user: BotConfig): boolean {
+  function shouldUseTransientInteractionCard(
+    bot: BotConfig,
+    user: BotConfig,
+  ): boolean {
     const adapter = providers[bot.provider];
     return (
       isFeishuBotProvider(bot.provider) &&
-      normalizeBotReplyGranularity(bot.provider, user.replyMode) === "streaming_card" &&
+      normalizeBotReplyGranularity(bot.provider, user.replyMode) ===
+        "streaming_card" &&
       Boolean(adapter?.createTransientInteractionCard) &&
       Boolean(adapter?.updateTransientInteractionCard)
     );
@@ -2836,10 +3296,17 @@ export function createBotsService(
     if (existing) {
       // 修复原因：交互推进时 POST 新卡再 DELETE 旧卡会显示撤回痕迹。
       // callback token 更新失败后的降级路径也只能 PATCH 原 message_id，保持单卡身份稳定。
-      await adapter?.updateTransientInteractionCard?.(existing.bot, existing.handle, message);
+      await adapter?.updateTransientInteractionCard?.(
+        existing.bot,
+        existing.handle,
+        message,
+      );
       return;
     }
-    const handle = await adapter?.createTransientInteractionCard?.(bot, message);
+    const handle = await adapter?.createTransientInteractionCard?.(
+      bot,
+      message,
+    );
     if (!handle) {
       return;
     }
@@ -2859,7 +3326,11 @@ export function createBotsService(
     try {
       // 修复原因：交互完成后撤回卡片会让问答和计划从聊天历史消失，用户无法回看
       // 决策上下文。终态只更新为无控件卡片并释放运行时句柄，后续交互会创建新卡。
-      await adapter?.updateTransientInteractionCard?.(existing.bot, existing.handle, fallback);
+      await adapter?.updateTransientInteractionCard?.(
+        existing.bot,
+        existing.handle,
+        fallback,
+      );
     } catch (error) {
       botsLogger.warn(
         undefined,
@@ -2872,9 +3343,21 @@ export function createBotsService(
   }
 
   const waitForGroupDeliverySlot = createGroupDeliveryThrottle();
-  const groupDeliverySenders = new Map<string, ReturnType<typeof createGroupResultDelivery>>();
-  function getGroupDeliverySender(bot: BotConfig, chatId: string, threadId?: string) {
-    const key = getBotConversationKey({ botId: bot.id, chatType: "group", chatId, threadId });
+  const groupDeliverySenders = new Map<
+    string,
+    ReturnType<typeof createGroupResultDelivery>
+  >();
+  function getGroupDeliverySender(
+    bot: BotConfig,
+    chatId: string,
+    threadId?: string,
+  ) {
+    const key = getBotConversationKey({
+      botId: bot.id,
+      chatType: "group",
+      chatId,
+      threadId,
+    });
     const existing = groupDeliverySenders.get(key);
     if (existing) return existing;
     const authorized = async (result: BotGroupDelivery): Promise<boolean> => {
@@ -2885,22 +3368,28 @@ export function createBotsService(
         (!result.appId || result.appId === currentBot.feishuAppId) &&
         (!result.contentParts ||
           !["cancelled", "discarded", "stopped"].includes(
-            state?.group?.inputs?.[result.sourceCommandId ?? ""]?.progress?.status ?? "",
+            state?.group?.inputs?.[result.sourceCommandId ?? ""]?.progress
+              ?.status ?? "",
           )) &&
         state?.group?.enabled &&
         state.group.ownerId === currentBot.providerUserId &&
         state.activeTaskId === result.taskId &&
         state.group.deliveries?.[result.id]?.status !== "invalidated" &&
-        (!result.authorizationId || result.authorizationId === state.group.authorizationId),
+        (!result.authorizationId ||
+          result.authorizationId === state.group.authorizationId),
       );
     };
     const sender = createGroupResultDelivery({
       onSettled: async () => {
         await deps.broadcastService
-          ?.send({ channel: "bots:group-state", payload: { botId: bot.id, chatId } })
+          ?.send({
+            channel: "bots:group-state",
+            payload: { botId: bot.id, chatId },
+          })
           .catch(() => undefined);
       },
-      read: async (id) => (await repo.readState()).bots[key]?.group?.deliveries?.[id],
+      read: async (id) =>
+        (await repo.readState()).bots[key]?.group?.deliveries?.[id],
       authorized,
       write: async (result) => {
         const operation = stateWriteTail
@@ -2921,7 +3410,9 @@ export function createBotsService(
                 ...context.group,
                 deliveries: {
                   ...context.group.deliveries,
-                  [result.id]: invalidated ? { ...result, status: "invalidated" } : result,
+                  [result.id]: invalidated
+                    ? { ...result, status: "invalidated" }
+                    : result,
                 },
               },
             };
@@ -2930,22 +3421,31 @@ export function createBotsService(
         stateWriteTail = operation;
         await operation;
         await deps.broadcastService
-          ?.send({ channel: "bots:group-state", payload: { botId: bot.id, chatId } })
+          ?.send({
+            channel: "bots:group-state",
+            payload: { botId: bot.id, chatId },
+          })
           .catch(() => undefined);
       },
       send: async (result) => {
         await waitForGroupDeliverySlot(`${bot.provider}:${chatId}`);
         if (!(await authorized(result)))
-          throw Object.assign(new Error("Group delivery authorization changed"), {
-            deliveryRejected: true,
-          });
+          throw Object.assign(
+            new Error("Group delivery authorization changed"),
+            {
+              deliveryRejected: true,
+            },
+          );
         const currentBot = findBot(await repo.readConfig(), bot.id);
         const adapter = currentBot && providers[currentBot.provider];
         if (!adapter || !currentBot)
-          throw Object.assign(new Error("Bot provider unavailable"), { deliveryRejected: true });
+          throw Object.assign(new Error("Bot provider unavailable"), {
+            deliveryRejected: true,
+          });
         if (
           result.contentParts &&
-          (currentBot.provider !== bot.provider || currentBot.feishuAppId !== result.appId)
+          (currentBot.provider !== bot.provider ||
+            currentBot.feishuAppId !== result.appId)
         )
           throw Object.assign(new Error("Channel reply application changed"), {
             deliveryRejected: true,
@@ -2954,6 +3454,7 @@ export function createBotsService(
           botId: bot.id,
           provider: bot.provider,
           providerUserId: chatId,
+          chatType: "group",
           text: result.text,
           deliveryId: result.id,
           replyToMessageId: result.replyToMessageId,
@@ -2962,7 +3463,8 @@ export function createBotsService(
           trace: result.trace,
           threadId: result.threadId ?? threadId,
           rootMessageId:
-            result.rootMessageId ?? (await repo.readState()).bots[key]?.group?.rootMessageId,
+            result.rootMessageId ??
+            (await repo.readState()).bots[key]?.group?.rootMessageId,
         });
       },
     });
@@ -2979,7 +3481,11 @@ export function createBotsService(
       message.conversationThreadId !== undefined
         ? (message.conversationThreadId ?? undefined)
         : message.threadId;
-    if (isFeishuBotProvider(bot.provider) && message.groupTaskId && message.deliveryId) {
+    if (
+      isFeishuBotProvider(bot.provider) &&
+      message.groupTaskId &&
+      message.deliveryId
+    ) {
       const parts = splitFeishuText(message.text);
       const group = (await repo.readState()).bots[
         getBotConversationKey({
@@ -2990,9 +3496,12 @@ export function createBotsService(
           conversationThreadId: message.conversationThreadId,
         })
       ]?.group;
-      const authorizationId = message.groupCard?.authorizationId ?? group?.authorizationId;
+      const authorizationId =
+        message.groupCard?.authorizationId ?? group?.authorizationId;
       for (const [index, text] of parts.entries()) {
-        const id = createHash("sha256").update(`${message.deliveryId}:${index}`).digest("hex");
+        const id = createHash("sha256")
+          .update(`${message.deliveryId}:${index}`)
+          .digest("hex");
         const result: BotGroupDelivery = {
           authorizationId,
           id,
@@ -3006,12 +3515,21 @@ export function createBotsService(
           status: "pending",
           updatedAt: Date.now(),
         };
-        await getGroupDeliverySender(bot, message.providerUserId, conversationThreadId)(result);
+        await getGroupDeliverySender(
+          bot,
+          message.providerUserId,
+          conversationThreadId,
+        )(result);
       }
       return;
     }
-    if (isFeishuBotProvider(bot.provider) && message.providerUserId.startsWith("oc_")) {
-      await waitForGroupDeliverySlot(`${bot.provider}:${message.providerUserId}`);
+    if (
+      isFeishuBotProvider(bot.provider) &&
+      message.providerUserId.startsWith("oc_")
+    ) {
+      await waitForGroupDeliverySlot(
+        `${bot.provider}:${message.providerUserId}`,
+      );
     }
     // 定时任务也使用稳定群目标；等待发送额度之后重新检查启用状态。
     if (authorize && !(await authorize())) return;
@@ -3117,7 +3635,9 @@ export function createBotsService(
   ): Promise<T> {
     // 控制请求独立串行，不能被等待附件或 admission 的普通输入挡住。
     const actorContextKey = `${getBotConversationKey(actor)}${control ? ":control" : ""}`;
-    const previous = inboundProcessingQueuesByContext.get(actorContextKey) ?? Promise.resolve();
+    const previous =
+      inboundProcessingQueuesByContext.get(actorContextKey) ??
+      Promise.resolve();
     let releaseQueue = (): void => undefined;
     const current = previous
       .catch(() => undefined)
@@ -3180,7 +3700,10 @@ export function createBotsService(
       .catch(() => undefined);
   }
 
-  async function stopInboundTyping(bot: BotConfig, actor: BotActor): Promise<void> {
+  async function stopInboundTyping(
+    bot: BotConfig,
+    actor: BotActor,
+  ): Promise<void> {
     const adapter = providers[bot.provider];
     const targetId = actor.chatId ?? actor.providerUserId;
     if (!adapter?.stopTyping || !targetId || !actor.providerMessageId) {
@@ -3188,7 +3711,8 @@ export function createBotsService(
     }
     const isLongRunningTyping = Array.from(typingTargets.values()).some(
       (typing) =>
-        typing.bot.id === bot.id && typing.target.providerMessageId === actor.providerMessageId,
+        typing.bot.id === bot.id &&
+        typing.target.providerMessageId === actor.providerMessageId,
     );
     if (isLongRunningTyping) {
       return;
@@ -3207,7 +3731,12 @@ export function createBotsService(
   function startTyping(bot: BotConfig, actor: BotActor, taskId: string): void {
     const adapter = providers[bot.provider];
     const targetId = actor.chatId ?? actor.providerUserId;
-    if (!adapter || !targetId || typingTargets.has(taskId) || typingIntervals.has(taskId)) {
+    if (
+      !adapter ||
+      !targetId ||
+      typingTargets.has(taskId) ||
+      typingIntervals.has(taskId)
+    ) {
       return;
     }
     const target: BotTypingTarget = {
@@ -3236,7 +3765,9 @@ export function createBotsService(
     if (activeTyping) {
       typingTargets.delete(taskId);
       const adapter = providers[activeTyping.bot.provider];
-      void adapter?.stopTyping?.(activeTyping.bot, activeTyping.target).catch(() => undefined);
+      void adapter
+        ?.stopTyping?.(activeTyping.bot, activeTyping.target)
+        .catch(() => undefined);
     }
     const intervalId = typingIntervals.get(taskId);
     if (!intervalId) {
@@ -3247,7 +3778,10 @@ export function createBotsService(
   }
 
   function updateLiveStatusProgress(event: ZCodeStreamEvent): void {
-    if (event.type === "agent_message_chunk" || event.type === "agent_thought_chunk") {
+    if (
+      event.type === "agent_message_chunk" ||
+      event.type === "agent_thought_chunk"
+    ) {
       const text = normalizeStatusProgressText(event.content);
       if (!text) {
         return;
@@ -3498,7 +4032,8 @@ export function createBotsService(
       ...config,
       bots: config.bots.map((item) => (item.id === bot.id ? nextBot : item)),
     };
-    const shouldWrite = nextBot.allowedWorkspaces.join("\n") !== bot.allowedWorkspaces.join("\n");
+    const shouldWrite =
+      nextBot.allowedWorkspaces.join("\n") !== bot.allowedWorkspaces.join("\n");
     if (shouldWrite) {
       await writeBotConfig(nextConfig);
     }
@@ -3544,7 +4079,9 @@ export function createBotsService(
     value: string,
   ): BotTaskSelectionEntry | null {
     const actorContextKey = getActorContextKey(actor);
-    const directEntry = pendingTaskSelectionsByContext.get(actorContextKey)?.get(value.trim());
+    const directEntry = pendingTaskSelectionsByContext
+      .get(actorContextKey)
+      ?.get(value.trim());
     if (directEntry) {
       return directEntry;
     }
@@ -3552,7 +4089,10 @@ export function createBotsService(
     if (!option) {
       return null;
     }
-    return pendingTaskSelectionsByContext.get(actorContextKey)?.get(option.id) ?? null;
+    return (
+      pendingTaskSelectionsByContext.get(actorContextKey)?.get(option.id) ??
+      null
+    );
   }
 
   function resolvePendingWorkspaceSelectionEntry(
@@ -3560,7 +4100,9 @@ export function createBotsService(
     value: string,
   ): BotWorkspaceSelectionEntry | null {
     const actorContextKey = getActorContextKey(actor);
-    const directEntry = pendingWorkspaceSelectionsByContext.get(actorContextKey)?.get(value.trim());
+    const directEntry = pendingWorkspaceSelectionsByContext
+      .get(actorContextKey)
+      ?.get(value.trim());
     if (directEntry) {
       return directEntry;
     }
@@ -3568,7 +4110,11 @@ export function createBotsService(
     if (!option) {
       return null;
     }
-    return pendingWorkspaceSelectionsByContext.get(actorContextKey)?.get(option.id) ?? null;
+    return (
+      pendingWorkspaceSelectionsByContext
+        .get(actorContextKey)
+        ?.get(option.id) ?? null
+    );
   }
 
   function createCurrentWorkspaceRef(context: BotContextState): BotWorkspaceRef {
@@ -3586,7 +4132,9 @@ export function createBotsService(
     if (!context.activeTaskId) {
       return null;
     }
-    const listedTask = await readTaskMeta(context, context.activeTaskId).catch(() => null);
+    const listedTask = await readTaskMeta(context, context.activeTaskId).catch(
+      () => null,
+    );
     if (listedTask) {
       return listedTask;
     }
@@ -3623,14 +4171,18 @@ export function createBotsService(
     if (!auth.context.activeTaskId) {
       return {
         ok: false,
-        reply: [createOutbound(message.actor, msg(auth.locale, "noActiveTask"))],
+        reply: [
+          createOutbound(message.actor, msg(auth.locale, "noActiveTask")),
+        ],
       };
     }
     const task = await readContextActiveTaskMeta(auth.context);
     if (!task) {
       return {
         ok: false,
-        reply: [createOutbound(message.actor, msg(auth.locale, "noActiveTask"))],
+        reply: [
+          createOutbound(message.actor, msg(auth.locale, "noActiveTask")),
+        ],
       };
     }
     const configOptions = await listActiveTaskConfigOptions(
@@ -3705,11 +4257,19 @@ export function createBotsService(
     const config = await repo.readConfig();
     const callbackBot = findCallbackBot(config, provider, payload);
     // 在读取引用附件和处理退群事件之前验证回调，避免未验证事件产生读写副作用。
-    if (callbackBot && isFeishuBotProvider(provider) && callbackBot.webhookSecretRef) {
-      const expectedToken = await deps.credentialService.load(callbackBot.webhookSecretRef);
-      const header = isRecord(payload) && isRecord(payload.header) ? payload.header : null;
+    if (
+      callbackBot &&
+      isFeishuBotProvider(provider) &&
+      callbackBot.webhookSecretRef
+    ) {
+      const expectedToken = await deps.credentialService.load(
+        callbackBot.webhookSecretRef,
+      );
+      const header =
+        isRecord(payload) && isRecord(payload.header) ? payload.header : null;
       const inboundToken = isRecord(payload)
-        ? (readNestedString(payload, "token") ?? readNestedString(header, "token"))
+        ? (readNestedString(payload, "token") ??
+          readNestedString(header, "token"))
         : undefined;
       if (!expectedToken || expectedToken !== inboundToken) {
         return {
@@ -3729,23 +4289,29 @@ export function createBotsService(
       const topic =
         chatId && threadId
           ? (await repo.readState()).bots[
-              getBotConversationKey({ botId: callbackBot.id, chatType: "group", chatId, threadId })
+              getBotConversationKey({
+                botId: callbackBot.id,
+                chatType: "group",
+                chatId,
+                threadId,
+              })
             ]
           : undefined;
       // 根引用属于首次输入，不属于 active 状态；退出再接入不能重复读取它。
       // 只信服务记录，外部回调不能声称已接收来跳过首次材料准备。
       materialPayload = {
         ...payload,
-        zcodeTopicHasAcceptedInput: Object.values(topic?.group?.inputs ?? {}).some(
-          (input) => input.admission === "accepted",
-        ),
+        zcodeTopicHasAcceptedInput: Object.values(
+          topic?.group?.inputs ?? {},
+        ).some((input) => input.admission === "accepted"),
       };
     }
     const preparedPayload = callbackBot
       ? ((await adapter
           .prepareCallbackPayload?.(callbackBot, materialPayload)
           .catch((error: unknown) => ({
-            zcodeCallbackPrepareError: error instanceof Error ? error.message : String(error),
+            zcodeCallbackPrepareError:
+              error instanceof Error ? error.message : String(error),
           }))) ?? payload)
       : payload;
     if (
@@ -3776,15 +4342,28 @@ export function createBotsService(
       isRecord(preparedPayload) &&
       preparedPayload.zcodeBotRemoved === true
     ) {
-      const event = isRecord(preparedPayload.event) ? preparedPayload.event : preparedPayload;
+      const event = isRecord(preparedPayload.event)
+        ? preparedPayload.event
+        : preparedPayload;
       const chatId = readNestedString(event, "chat_id");
       if (chatId) {
         const state = (await repo.readState()).bots[
-          getBotConversationKey({ botId: callbackBot.id, chatType: "group", chatId })
+          getBotConversationKey({
+            botId: callbackBot.id,
+            chatType: "group",
+            chatId,
+          })
         ];
         if (state?.group) {
           await writeContext(
-            { ...state, group: { ...state.group, enabled: false, authorizationId: randomUUID() } },
+            {
+              ...state,
+              group: {
+                ...state.group,
+                enabled: false,
+                authorizationId: randomUUID(),
+              },
+            },
             true,
           );
           await cancelGroupTopicInputs({
@@ -3802,18 +4381,30 @@ export function createBotsService(
       isFeishuBotProvider(provider) && isRecord(preparedPayload)
         ? { ...preparedPayload, zcodeProvider: provider }
         : preparedPayload;
-    if (callbackBot && isFeishuBotProvider(provider) && isRecord(parsePayload)) {
-      const event = isRecord(parsePayload.event) ? parsePayload.event : parsePayload;
+    if (
+      callbackBot &&
+      isFeishuBotProvider(provider) &&
+      isRecord(parsePayload)
+    ) {
+      const event = isRecord(parsePayload.event)
+        ? parsePayload.event
+        : parsePayload;
       const cardContext = isRecord(event.context) ? event.context : null;
       const cardChatId =
-        readNestedString(cardContext, "open_chat_id") ?? readNestedString(cardContext, "chat_id");
+        readNestedString(cardContext, "open_chat_id") ??
+        readNestedString(cardContext, "chat_id");
       if (cardChatId) {
         const states = await repo.readState();
         const group =
           states.bots[
-            getBotConversationKey({ botId: callbackBot.id, chatType: "group", chatId: cardChatId })
+            getBotConversationKey({
+              botId: callbackBot.id,
+              chatType: "group",
+              chatId: cardChatId,
+            })
           ];
-        if (group?.group) parsePayload = { ...parsePayload, zcodeChatType: "group" };
+        if (group?.group)
+          parsePayload = { ...parsePayload, zcodeChatType: "group" };
       }
     }
     const parsedInboundMessages = adapter.parseCallback(parsePayload);
@@ -3828,20 +4419,27 @@ export function createBotsService(
     const replies: BotOutboundMessage[] = [];
     let hadBusinessFailure = false;
     const inboundSecret =
-      isRecord(preparedPayload) && typeof preparedPayload.webhookSecret === "string"
+      isRecord(preparedPayload) &&
+      typeof preparedPayload.webhookSecret === "string"
         ? preparedPayload.webhookSecret
         : undefined;
     for (const inbound of parsedInboundMessages) {
       const bot = findBot(config, inbound.botId);
       if (bot?.provider === "webhook" && bot.webhookSecretRef) {
-        const expectedSecret = await deps.credentialService.load(bot.webhookSecretRef);
+        const expectedSecret = await deps.credentialService.load(
+          bot.webhookSecretRef,
+        );
         if (expectedSecret && expectedSecret !== inboundSecret) {
-          replies.push(createOutbound(inbound.actor, msg(locale, "webhookSecretInvalid")));
+          replies.push(
+            createOutbound(inbound.actor, msg(locale, "webhookSecretInvalid")),
+          );
           continue;
         }
       }
       if (bot && isFeishuBotProvider(bot.provider) && bot.webhookSecretRef) {
-        const expectedToken = await deps.credentialService.load(bot.webhookSecretRef);
+        const expectedToken = await deps.credentialService.load(
+          bot.webhookSecretRef,
+        );
         const payloadHeader =
           isRecord(preparedPayload) && isRecord(preparedPayload.header)
             ? preparedPayload.header
@@ -3853,14 +4451,23 @@ export function createBotsService(
               ? payloadHeader.token
               : undefined;
         if (expectedToken && expectedToken !== inboundToken) {
-          replies.push(createOutbound(inbound.actor, msg(locale, "webhookSecretInvalid")));
+          replies.push(
+            createOutbound(inbound.actor, msg(locale, "webhookSecretInvalid")),
+          );
           continue;
         }
       }
       let inboundMessage = inbound;
-      if (bot && !inbound.actor.displayName && adapter.resolveActorDisplayName) {
+      if (
+        bot &&
+        !inbound.actor.displayName &&
+        adapter.resolveActorDisplayName
+      ) {
         try {
-          const displayName = await adapter.resolveActorDisplayName(bot, inbound.actor);
+          const displayName = await adapter.resolveActorDisplayName(
+            bot,
+            inbound.actor,
+          );
           if (displayName?.trim()) {
             inboundMessage = {
               ...inbound,
@@ -3892,14 +4499,23 @@ export function createBotsService(
       // 回调失败和重连也走相同的话题提醒规则，保留 Provider 核验的提及事实。
       inboundMessage = {
         ...inboundMessage,
-        actor: { ...inboundMessage.actor, mentionedBot: inboundMessage.mentionedBot === true },
+        actor: {
+          ...inboundMessage.actor,
+          mentionedBot: inboundMessage.mentionedBot === true,
+        },
       };
       let outbound: BotOutboundMessage[];
       let reconnectStartingReply: BotOutboundMessage | null = null;
       let inboundBusinessFailure = false;
       try {
-        const command = parseBotCommand(inboundMessage.commandText ?? inboundMessage.text);
-        if (bot && inboundMessage.senderType !== "app" && command.type === "reconnect") {
+        const command = parseBotCommand(
+          inboundMessage.commandText ?? inboundMessage.text,
+        );
+        if (
+          bot &&
+          inboundMessage.senderType !== "app" &&
+          command.type === "reconnect"
+        ) {
           outbound = await handleReconnect(inboundMessage, {
             onReconnectStart: async (auth) => {
               reconnectStartingReply = createOutbound(
@@ -3954,7 +4570,9 @@ export function createBotsService(
               );
             });
           }
-          await stopInboundTyping(bot, inboundMessage.actor).catch(() => undefined);
+          await stopInboundTyping(bot, inboundMessage.actor).catch(
+            () => undefined,
+          );
         }
         continue;
       }
@@ -3971,7 +4589,8 @@ export function createBotsService(
               preparedPayload.zcodeFeishuCardResponseState.deferred === true
             ) &&
             Boolean(outbound[0])) ||
-            (inboundMessage.groupCardAction === true && outbound[0]?.callbackToastOnly === true));
+            (inboundMessage.groupCardAction === true &&
+              outbound[0]?.callbackToastOnly === true));
         // Bugfix: 只做空 ACK 会让 Telegram 顶部 loading 消失但没有任何可见反馈。
         // 这里在业务处理后把结果写进 answerCallbackQuery 的 toast，即使后续 sendMessage 失败，用户也能看到按钮结果。
         const callbackText = outbound[0]?.text ?? msg(locale, "received");
@@ -3988,7 +4607,8 @@ export function createBotsService(
         }, BOT_PROVIDER_CALLBACK_ACK_TIMEOUT_MS);
         try {
           acknowledgeResult = await Promise.race([
-            handledByFeishuSynchronousCardAction || (transientCard && !outbound[0]?.elicitation)
+            handledByFeishuSynchronousCardAction ||
+            (transientCard && !outbound[0]?.elicitation)
               ? Promise.resolve(undefined)
               : adapter.acknowledgeCallback?.(
                   bot,
@@ -4016,7 +4636,8 @@ export function createBotsService(
           clearTimeout(acknowledgeTimeout);
         }
         const callbackHandledByCardUpdate =
-          handledByFeishuSynchronousCardAction || acknowledgeResult?.handled === true;
+          handledByFeishuSynchronousCardAction ||
+          acknowledgeResult?.handled === true;
         const administratorNotice = outbound.find(
           (reply) => reply.callbackToastOnly && reply.administratorAttention,
         );
@@ -4037,7 +4658,11 @@ export function createBotsService(
           // callback token 负责点击 ACK，随后再 PATCH 同一 message_id 强制刷新可见结构；
           // 两次写入始终指向同一张卡，禁止退回“新建后撤回”的闪烁方案。
           await providers[transientCard.bot.provider]
-            ?.updateTransientInteractionCard?.(transientCard.bot, transientCard.handle, outbound[0])
+            ?.updateTransientInteractionCard?.(
+              transientCard.bot,
+              transientCard.handle,
+              outbound[0],
+            )
             .catch((error) => {
               // 业务回答已被 Agent 接受且 callback token 已完成 ACK，PATCH 失败不能让
               // Telegram/微信式外部游标重试整次回答，否则会重复提交同一交互。
@@ -4055,14 +4680,21 @@ export function createBotsService(
         ) {
           // 修复原因：card_update_token 已把同一消息更新为只读终态，此时只释放内存句柄，
           // 不能再 PATCH、DELETE 或另发结果卡。
-          transientInteractionCards.delete(getActorContextKey(inboundMessage.actor));
+          transientInteractionCards.delete(
+            getActorContextKey(inboundMessage.actor),
+          );
         }
         // Bugfix: /reconnect 的“正在重连”必须在 ensureConnected 前实时发送。
         // handleReconnect 只返回最终结果，避免重连完成后才把过期的开始状态一起吐给用户。
         try {
-          for (const outboundMessage of callbackHandledByCardUpdate ? [] : outbound) {
+          for (const outboundMessage of callbackHandledByCardUpdate
+            ? []
+            : outbound) {
             if (transientCard && !outboundMessage.callbackToastOnly) {
-              if (outboundMessage.selection || outboundMessage.elicitation?.status === "pending") {
+              if (
+                outboundMessage.selection ||
+                outboundMessage.elicitation?.status === "pending"
+              ) {
                 await upsertTransientInteractionCard(
                   bot,
                   inboundMessage.actor,
@@ -4075,7 +4707,10 @@ export function createBotsService(
                 outboundMessage.elicitation ||
                 /^\/(?:approve|deny)(?:\s|$)/u.test(inboundMessage.text)
               ) {
-                await finalizeTransientInteractionCard(inboundMessage.actor, outboundMessage);
+                await finalizeTransientInteractionCard(
+                  inboundMessage.actor,
+                  outboundMessage,
+                );
                 continue;
               }
             }
@@ -4127,7 +4762,10 @@ export function createBotsService(
           blocks.push({ type: "content", content: block.content });
           continue;
         }
-        if (resolvedMode !== "assistant_toolcalls_changes" || block.type !== "tool-call") {
+        if (
+          resolvedMode !== "assistant_toolcalls_changes" ||
+          block.type !== "tool-call"
+        ) {
           continue;
         }
         const toolCall = toolCalls.get(block.toolCall.toolId);
@@ -4137,7 +4775,11 @@ export function createBotsService(
       }
     }
 
-    if (changeSummary && changeSummary.fileCount > 0 && changeSummary.files.length > 0) {
+    if (
+      changeSummary &&
+      changeSummary.fileCount > 0 &&
+      changeSummary.files.length > 0
+    ) {
       blocks.push({ type: "change-summary", changeSummary });
     }
     return blocks;
@@ -4220,16 +4862,25 @@ export function createBotsService(
     return pending.answers[getElicitationAnswerKey(questionIndex)] ?? [];
   }
 
-  function getPendingElicitationSelectionToken(pending: BotPendingElicitation): string {
+  function getPendingElicitationSelectionToken(
+    pending: BotPendingElicitation,
+  ): string {
     return createHash("sha256")
       .update(
-        [pending.taskId, pending.runId, pending.requestId, pending.currentQuestionIndex].join("::"),
+        [
+          pending.taskId,
+          pending.runId,
+          pending.requestId,
+          pending.currentQuestionIndex,
+        ].join("::"),
       )
       .digest("hex")
       .slice(0, 12);
   }
 
-  function getPendingElicitationSkipOptionId(pending: BotPendingElicitation): string {
+  function getPendingElicitationSkipOptionId(
+    pending: BotPendingElicitation,
+  ): string {
     return `${BOT_ELICITATION_SKIP_OPTION_ID}:${getPendingElicitationSelectionToken(pending)}`;
   }
 
@@ -4253,7 +4904,9 @@ export function createBotsService(
     try {
       const parsed = JSON.parse(decodeURIComponent(encoded)) as unknown;
       const values = Array.isArray(parsed) ? parsed : [parsed];
-      return values.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
+      return values
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean);
     } catch {
       return [];
     }
@@ -4266,7 +4919,9 @@ export function createBotsService(
   ): string[] {
     const customValues = formValues.filter(Boolean);
     if (!question.multiSelect) {
-      return customValues.length > 0 ? customValues.slice(0, 1) : selectedValues.slice(0, 1);
+      return customValues.length > 0
+        ? customValues.slice(0, 1)
+        : selectedValues.slice(0, 1);
     }
     const merged: string[] = [];
     for (const value of [...selectedValues, ...customValues]) {
@@ -4289,7 +4944,9 @@ export function createBotsService(
     }
     return {
       ...pending,
-      expandedCustomAnswerQuestionIndexes: [...current].sort((left, right) => left - right),
+      expandedCustomAnswerQuestionIndexes: [...current].sort(
+        (left, right) => left - right,
+      ),
     };
   }
 
@@ -4306,7 +4963,13 @@ export function createBotsService(
     if (
       question.multiSelect &&
       options.includeSubmit !== false &&
-      ["submit", "done", "完成", "提交", BOT_ELICITATION_SUBMIT_OPTION_ID].includes(normalized)
+      [
+        "submit",
+        "done",
+        "完成",
+        "提交",
+        BOT_ELICITATION_SUBMIT_OPTION_ID,
+      ].includes(normalized)
     ) {
       return BOT_ELICITATION_SUBMIT_OPTION_ID;
     }
@@ -4337,16 +5000,21 @@ export function createBotsService(
       !pending.actorKey ||
       pending.actorKey === getActorContextKey(actor) ||
       (actor.chatType === "group" &&
-        pending.actorKey.startsWith(`${actor.botId}::${actor.provider}::${actor.chatId}::`))
+        pending.actorKey.startsWith(
+          `${actor.botId}::${actor.provider}::${actor.chatId}::`,
+        ))
     );
   }
 
-  function clearPendingElicitationSelection(pending: BotPendingElicitation): void {
+  function clearPendingElicitationSelection(
+    pending: BotPendingElicitation,
+  ): void {
     const token = getPendingElicitationSelectionToken(pending);
     for (const [contextKey, selection] of pendingSelectionsByContext) {
       if (
         selection.action === "elicitation.respond" &&
-        (selection.token === token || selection.id.startsWith(`elicitation-${pending.requestId}-`))
+        (selection.token === token ||
+          selection.id.startsWith(`elicitation-${pending.requestId}-`))
       ) {
         pendingSelectionsByContext.delete(contextKey);
       }
@@ -4385,9 +5053,13 @@ export function createBotsService(
   function createBotElicitationRequestSnapshot(
     pending: BotPendingElicitation,
   ): ZCodeElicitationRequest {
-    const currentQuestion = pending.questions[pending.currentQuestionIndex] ?? pending.questions[0];
+    const currentQuestion =
+      pending.questions[pending.currentQuestionIndex] ?? pending.questions[0];
     const answerDrafts = Object.fromEntries(
-      Object.entries(pending.answers).map(([index, values]) => [`answer_${index}`, values]),
+      Object.entries(pending.answers).map(([index, values]) => [
+        `answer_${index}`,
+        values,
+      ]),
     );
     return {
       type: "elicitation_request",
@@ -4447,7 +5119,9 @@ export function createBotsService(
       return pending.requestId;
     }
     const isCustomAnswerExpanded =
-      pending.expandedCustomAnswerQuestionIndexes?.includes(pending.currentQuestionIndex) === true;
+      pending.expandedCustomAnswerQuestionIndexes?.includes(
+        pending.currentQuestionIndex,
+      ) === true;
     if (pending.renderContext?.kind === "plan_approval") {
       // Bugfix: Feishu 卡片能直接消费 schema.plan，但 Telegram/微信只渲染 message.text。
       // 在共享出站标题中投影完整计划，确保所有纯文本渠道都保留审批上下文。
@@ -4455,21 +5129,31 @@ export function createBotsService(
         pending.renderContext.plan,
         "------",
         msg(locale, "planApprovalTitle"),
-        isCustomAnswerExpanded ? msg(locale, "elicitationCustomPlaceholder") : null,
+        isCustomAnswerExpanded
+          ? msg(locale, "elicitationCustomPlaceholder")
+          : null,
       ]
-        .filter((part): part is string => typeof part === "string" && part.length > 0)
+        .filter(
+          (part): part is string => typeof part === "string" && part.length > 0,
+        )
         .join("\n\n");
     }
     const parts = [
       pending.questions.length > 1
         ? `${pending.currentQuestionIndex + 1}/${pending.questions.length}`
         : null,
-      question.header && question.header !== question.question ? question.header : null,
+      question.header && question.header !== question.question
+        ? question.header
+        : null,
       question.question,
       question.multiSelect ? msg(locale, "elicitationMultiSelectHint") : null,
-      isCustomAnswerExpanded ? msg(locale, "elicitationCustomPlaceholder") : null,
+      isCustomAnswerExpanded
+        ? msg(locale, "elicitationCustomPlaceholder")
+        : null,
       msg(locale, "elicitationTextHint"),
-    ].filter((part): part is string => typeof part === "string" && part.length > 0);
+    ].filter(
+      (part): part is string => typeof part === "string" && part.length > 0,
+    );
     return parts.join("\n");
   }
 
@@ -4490,7 +5174,9 @@ export function createBotsService(
         // Plan approval 的说明属于语义元数据；纯文本渠道只展示批准/自定义两个动作，
         // 避免把“退出计划模式”展开成额外正文，保持与 Feishu 卡片一致。
         description:
-          pending.renderContext?.kind === "plan_approval" ? undefined : option.description,
+          pending.renderContext?.kind === "plan_approval"
+            ? undefined
+            : option.description,
       })) ?? [];
     if (pending.renderContext?.kind === "plan_approval") {
       // Bugfix: Feishu provider 会自行补自定义回答表单，但 Telegram/微信依赖共享 selection。
@@ -4524,32 +5210,40 @@ export function createBotsService(
     actor: BotActor,
     pending: BotPendingElicitation,
     locale: Locale | undefined,
-    status: NonNullable<BotOutboundMessage["elicitation"]>["status"] = "pending",
+    status: NonNullable<
+      BotOutboundMessage["elicitation"]
+    >["status"] = "pending",
   ): Promise<BotOutboundMessage[]> {
     const currentQuestionIndex =
       status === "pending"
         ? pending.currentQuestionIndex
         : Math.max(0, pending.questions.length - 1);
-    return createSelectionReply(actor, createBotElicitationSelection(pending, locale), locale, {
+    return createSelectionReply(
+      actor,
+      createBotElicitationSelection(pending, locale),
       locale,
-      elicitation: {
-        requestId: pending.requestId,
-        taskId: pending.taskId,
-        runId: pending.runId,
-        currentQuestionIndex,
-        questions: pending.questions,
-        answers: pending.answers,
-        status,
-        ...(pending.expandedCustomAnswerQuestionIndexes?.length
-          ? {
-              expandedCustomAnswerQuestionIndexes: pending.expandedCustomAnswerQuestionIndexes,
-            }
-          : {}),
-        ...(createPendingElicitationSchema(pending)
-          ? { schema: createPendingElicitationSchema(pending) }
-          : {}),
+      {
+        locale,
+        elicitation: {
+          requestId: pending.requestId,
+          taskId: pending.taskId,
+          runId: pending.runId,
+          currentQuestionIndex,
+          questions: pending.questions,
+          answers: pending.answers,
+          status,
+          ...(pending.expandedCustomAnswerQuestionIndexes?.length
+            ? {
+                expandedCustomAnswerQuestionIndexes:
+                  pending.expandedCustomAnswerQuestionIndexes,
+              }
+            : {}),
+          ...(createPendingElicitationSchema(pending)
+            ? { schema: createPendingElicitationSchema(pending) }
+            : {}),
+        },
       },
-    });
+    );
   }
 
   function createCompletedElicitationOutbound(
@@ -4561,7 +5255,10 @@ export function createBotsService(
     const status = action === "cancel" ? "cancelled" : "completed";
     return createOutbound(
       actor,
-      msg(locale, action === "accept" ? "elicitationSubmitted" : "elicitationCancelled"),
+      msg(
+        locale,
+        action === "accept" ? "elicitationSubmitted" : "elicitationCancelled",
+      ),
       undefined,
       {
         locale,
@@ -4589,7 +5286,11 @@ export function createBotsService(
       return;
     }
     clearPendingElicitationSelection(context.pendingElicitation);
-    await writeContext({ ...context, pendingElicitation: undefined }, false, context.activeTaskId);
+    await writeContext(
+      { ...context, pendingElicitation: undefined },
+      false,
+      context.activeTaskId,
+    );
   }
 
   async function submitPendingElicitation(
@@ -4609,7 +5310,9 @@ export function createBotsService(
     if (pending.handledAt) {
       return [createOutbound(actor, msg(auth.locale, "elicitationHandled"))];
     }
-    const zcodeTaskService = await resolveZCodeTaskServiceForContext(auth.context);
+    const zcodeTaskService = await resolveZCodeTaskServiceForContext(
+      auth.context,
+    );
     const submitted = await zcodeTaskService.respondElicitation({
       taskId: pending.taskId,
       workspacePath: auth.context.workspacePath,
@@ -4628,19 +5331,28 @@ export function createBotsService(
     });
     clearPendingElicitationSelection(pending);
     await writeContext({ ...auth.context, pendingElicitation: undefined });
-    await broadcastTaskListChange(auth.context, pending.taskId, "elicitation_resolved", {
-      requestId: pending.requestId,
-    });
+    await broadcastTaskListChange(
+      auth.context,
+      pending.taskId,
+      "elicitation_resolved",
+      {
+        requestId: pending.requestId,
+      },
+    );
     if (!submitted) {
       return [createOutbound(actor, msg(auth.locale, "elicitationHandled"))];
     }
     if (action === "accept") {
       startTyping(auth.bot, actor, pending.taskId);
       // Bugfix: AskUserQuestion 只是在回复问题，不属于命令配置成功；这里保留原问答提交文案，避免误回 /status。
-      return [createCompletedElicitationOutbound(actor, pending, auth.locale, action)];
+      return [
+        createCompletedElicitationOutbound(actor, pending, auth.locale, action),
+      ];
     }
     // Bugfix: 取消/拒绝问答也应使用问答自己的结果文案，避免第三方 Bot 里出现无关的任务状态。
-    return [createCompletedElicitationOutbound(actor, pending, auth.locale, action)];
+    return [
+      createCompletedElicitationOutbound(actor, pending, auth.locale, action),
+    ];
   }
 
   async function advancePendingElicitation(
@@ -4750,7 +5462,10 @@ export function createBotsService(
     }
     const answerKey = getElicitationAnswerKey(pending.currentQuestionIndex);
     if (question.multiSelect) {
-      const currentValues = readElicitationAnswerValues(pending, pending.currentQuestionIndex);
+      const currentValues = readElicitationAnswerValues(
+        pending,
+        pending.currentQuestionIndex,
+      );
       const nextValues = currentValues.includes(selectedValue)
         ? currentValues.filter((item) => item !== selectedValue)
         : [...currentValues, selectedValue];
@@ -4816,7 +5531,11 @@ export function createBotsService(
               includeSubmit: false,
             }),
           )
-      : [resolveElicitationQuestionValue(question, value, { includeSubmit: false })];
+      : [
+          resolveElicitationQuestionValue(question, value, {
+            includeSubmit: false,
+          }),
+        ];
     return advancePendingElicitation(auth, actor, pending, {
       ...pending.answers,
       [answerKey]: values,
@@ -4831,10 +5550,14 @@ export function createBotsService(
     if (!auth.ok) return auth.reply;
     const pending = auth.context.pendingElicitation;
     if (!pending || pending.requestId !== response.requestId) {
-      return [createOutbound(message.actor, msg(auth.locale, "elicitationExpired"))];
+      return [
+        createOutbound(message.actor, msg(auth.locale, "elicitationExpired")),
+      ];
     }
     if (!isPendingElicitationOwnedByActor(pending, message.actor)) {
-      return [createOutbound(message.actor, msg(auth.locale, "elicitationExpired"))];
+      return [
+        createOutbound(message.actor, msg(auth.locale, "elicitationExpired")),
+      ];
     }
     return submitPendingElicitation(
       auth,
@@ -4880,9 +5603,17 @@ export function createBotsService(
       clearPendingElicitationSelection(context.pendingElicitation);
     }
     Object.assign(context, { pendingElicitation });
-    await writeContext({ ...context, pendingElicitation }, false, context.activeTaskId);
+    await writeContext(
+      { ...context, pendingElicitation },
+      false,
+      context.activeTaskId,
+    );
     await broadcastPendingElicitationProgress(context, pendingElicitation);
-    for (const reply of await createElicitationReply(actor, pendingElicitation, locale)) {
+    for (const reply of await createElicitationReply(
+      actor,
+      pendingElicitation,
+      locale,
+    )) {
       // 原因：临时交互卡绕过普通出站分支，曾丢失群任务和授权版本；选择传输方式前统一附加。
       const scopedReply = context.group
         ? {
@@ -4900,7 +5631,12 @@ export function createBotsService(
           }
         : reply;
       if (shouldUseTransientInteractionCard(bot, user)) {
-        await upsertTransientInteractionCard(bot, actor, event.taskId, scopedReply);
+        await upsertTransientInteractionCard(
+          bot,
+          actor,
+          event.taskId,
+          scopedReply,
+        );
       } else {
         await sendOutbound(bot, scopedReply);
       }
@@ -4937,7 +5673,9 @@ export function createBotsService(
     if (!context.activeTaskId) {
       return;
     }
-    for (const [inputId, input] of Object.entries(context.group?.inputs ?? {})) {
+    for (const [inputId, input] of Object.entries(
+      context.group?.inputs ?? {},
+    )) {
       if (
         input.taskId !== context.activeTaskId ||
         !input.progress?.cardMessageId ||
@@ -4967,14 +5705,19 @@ export function createBotsService(
     const existingSubscription = streamSubscriptions.get(streamSubscriptionKey);
     if (existingSubscription) {
       if (automation)
-        existingSubscription.automation(typeof automation === "string" ? automation : undefined);
+        existingSubscription.automation(
+          typeof automation === "string" ? automation : undefined,
+        );
       return;
     }
-    const persistentPrivate = !context.group && !automation && privateSyncSupported(bot);
+    const persistentPrivate =
+      !context.group && !automation && privateSyncSupported(bot);
     const bindingId = context.privateBindingId;
     let automationPending = automation === true;
     let automationRun = Boolean(automation);
-    const automationRuns = new Set<string>(typeof automation === "string" ? [automation] : []);
+    const automationRuns = new Set<string>(
+      typeof automation === "string" ? [automation] : [],
+    );
     let imInteractionRun = !persistentPrivate;
     let privateDeliveryFailed = false;
     let privateCardDeliveryUnknown = false;
@@ -4992,7 +5735,9 @@ export function createBotsService(
       const currentBot = findBot(await repo.readConfig(), bot.id);
       const latest = (await repo.readState()).bots[bot.id];
       const recipient =
-        currentBot?.provider === "weixin" ? latest?.privateRecipientId : currentBot?.providerUserId;
+        currentBot?.provider === "weixin"
+          ? latest?.privateRecipientId
+          : currentBot?.providerUserId;
       return Boolean(
         currentBot?.enabled &&
         currentBot.provider === bot.provider &&
@@ -5000,7 +5745,8 @@ export function createBotsService(
         latest &&
         latest.privateBindingId === bindingId &&
         isWorkspaceAllowed(
-          latest.workspaceId ?? getWorkspaceKey(latest.workspacePath, latest.workspaceIdentity),
+          latest.workspaceId ??
+            getWorkspaceKey(latest.workspacePath, latest.workspaceIdentity),
           currentBot.allowedWorkspaces,
         ) &&
         latest?.activeTaskId === context.activeTaskId &&
@@ -5021,9 +5767,12 @@ export function createBotsService(
       if (streamSubscriptions.has(streamSubscriptionKey)) return;
     }
     const automationGroupKey =
-      actor.chatType === "group" && !context.group ? getBotConversationKey(actor) : null;
+      actor.chatType === "group" && !context.group
+        ? getBotConversationKey(actor)
+        : null;
     const automationAuthorizationId = automationGroupKey
-      ? (await repo.readState()).bots[automationGroupKey]?.group?.authorizationId
+      ? (await repo.readState()).bots[automationGroupKey]?.group
+          ?.authorizationId
       : undefined;
     let disposed = false;
     let resultRunId = "";
@@ -5043,7 +5792,9 @@ export function createBotsService(
         persistentPrivate &&
         bot.provider === "weixin" &&
         !imInteractionRun &&
-        !(await deps.credentialService.load(weixinContextKey(bot, actor.providerUserId)))
+        !(await deps.credentialService.load(
+          weixinContextKey(bot, actor.providerUserId),
+        ))
       ) {
         privateDeliveryFailed = true;
         const locale = await readMessageLocale();
@@ -5056,7 +5807,8 @@ export function createBotsService(
         return;
       }
       if (automationGroupKey) {
-        const current = (await repo.readState()).bots[automationGroupKey]?.group;
+        const current = (await repo.readState()).bots[automationGroupKey]
+          ?.group;
         const currentBot = findBot(await repo.readConfig(), bot.id);
         if (
           !current?.enabled ||
@@ -5074,14 +5826,17 @@ export function createBotsService(
                 ...message,
                 groupTaskId: context.activeTaskId!,
                 threadId: actor.threadId ?? context.group.threadId,
-                rootMessageId: actor.rootMessageId ?? context.group.rootMessageId,
+                rootMessageId:
+                  actor.rootMessageId ?? context.group.rootMessageId,
                 conversationThreadId: actor.conversationThreadId,
                 groupSourceCommandId: resultSourceCommandId,
                 groupCard: groupCardFor(actor, context),
                 replyToMessageId: actor.providerMessageId,
                 mentionedUserIds:
                   message.mentionedUserIds ??
-                  (message.selection || resultPart === 0 ? resultMentionedUserIds : undefined),
+                  (message.selection || resultPart === 0
+                    ? resultMentionedUserIds
+                    : undefined),
                 ...(!message.selection && resultRunId
                   ? {
                       deliveryId: createHash("sha256")
@@ -5103,7 +5858,9 @@ export function createBotsService(
             : message,
           automationGroupKey
             ? async () => {
-                const current = (await repo.readState()).bots[automationGroupKey]?.group;
+                const current = (await repo.readState()).bots[
+                  automationGroupKey
+                ]?.group;
                 const currentBot = findBot(await repo.readConfig(), bot.id);
                 return Boolean(
                   current?.enabled &&
@@ -5132,7 +5889,8 @@ export function createBotsService(
     let streamingCardHandle: BotStreamingReplyCardHandle | null = null;
     let streamingCardSegmentIndex = 0;
     const streamingCardBlocks: StreamingCardTimelineBlock[] = [];
-    let streamingCardStatus: "running" | "sealed" | "completed" | "error" = "running";
+    let streamingCardStatus: "running" | "sealed" | "completed" | "error" =
+      "running";
     let streamingCardLastUpdateAt = 0;
     let streamingCardConsecutiveFailures = 0;
     let streamingCardNextAttemptAt = 0;
@@ -5147,8 +5905,9 @@ export function createBotsService(
         Boolean(adapter?.updateStreamingReplyCard)
       );
     };
-    const buildStreamingToolSummaryTitle = (locale: Locale | undefined): string =>
-      msg(locale, "streamingToolSummaries");
+    const buildStreamingToolSummaryTitle = (
+      locale: Locale | undefined,
+    ): string => msg(locale, "streamingToolSummaries");
     const appendStreamingCardMessageChunk = (content: string): void => {
       if (!content) {
         return;
@@ -5161,7 +5920,9 @@ export function createBotsService(
       streamingCardBlocks.push({ type: "message", text: content });
     };
     const appendStreamingCardMessages = (messages: readonly string[]): void => {
-      for (const message of messages.map((item) => item.trim()).filter(Boolean)) {
+      for (const message of messages
+        .map((item) => item.trim())
+        .filter(Boolean)) {
         const lastBlock = streamingCardBlocks.at(-1);
         if (lastBlock?.type === "message" && lastBlock.text.trim()) {
           lastBlock.text = `${lastBlock.text.trim()}\n\n${message}`;
@@ -5171,7 +5932,9 @@ export function createBotsService(
       }
     };
     const hasStreamingCardMessageText = (): boolean =>
-      streamingCardBlocks.some((block) => block.type === "message" && block.text.trim().length > 0);
+      streamingCardBlocks.some(
+        (block) => block.type === "message" && block.text.trim().length > 0,
+      );
     const appendStreamingCardTool = (toolId: string): void => {
       const existingBlock = streamingCardBlocks.find(
         (block) => block.type === "tools" && block.toolIds.includes(toolId),
@@ -5186,10 +5949,13 @@ export function createBotsService(
       }
       streamingCardBlocks.push({ type: "tools", toolIds: [toolId] });
     };
-    const buildStreamingCardBlocks = (locale: Locale | undefined): BotStreamingReplyCardBlock[] => {
+    const buildStreamingCardBlocks = (
+      locale: Locale | undefined,
+    ): BotStreamingReplyCardBlock[] => {
       const toolSummaryTitle = buildStreamingToolSummaryTitle(locale);
       const latestToolBlockIndex = streamingCardBlocks.reduce(
-        (latestIndex, block, index) => (block.type === "tools" ? index : latestIndex),
+        (latestIndex, block, index) =>
+          block.type === "tools" ? index : latestIndex,
         -1,
       );
       const blocks: BotStreamingReplyCardBlock[] = [];
@@ -5203,7 +5969,9 @@ export function createBotsService(
         }
         const summaries = block.toolIds
           .map((toolId) => toolCalls.get(toolId))
-          .filter((toolCall): toolCall is BotReplyToolCallState => Boolean(toolCall))
+          .filter((toolCall): toolCall is BotReplyToolCallState =>
+            Boolean(toolCall),
+          )
           .map((toolCall) =>
             formatBotToolCallSummaryLine(toolCall, {
               workspacePath: context.workspacePath,
@@ -5217,7 +5985,8 @@ export function createBotsService(
           type: "tools",
           title: toolSummaryTitle,
           summaries,
-          expanded: streamingCardStatus === "running" && index === latestToolBlockIndex,
+          expanded:
+            streamingCardStatus === "running" && index === latestToolBlockIndex,
         });
       }
       if (blocks.length === 0) {
@@ -5228,8 +5997,14 @@ export function createBotsService(
       }
       return blocks;
     };
-    const syncStreamingCardReply = async (trigger: string, force = false): Promise<void> => {
-      if (!supportsStreamingCardReply() || (persistentPrivate && privateCardDeliveryUnknown)) {
+    const syncStreamingCardReply = async (
+      trigger: string,
+      force = false,
+    ): Promise<void> => {
+      if (
+        !supportsStreamingCardReply() ||
+        (persistentPrivate && privateCardDeliveryUnknown)
+      ) {
         return;
       }
       const now = Date.now();
@@ -5241,7 +6016,8 @@ export function createBotsService(
       if (
         streamingCardHandle &&
         !force &&
-        now - streamingCardLastUpdateAt < FEISHU_STREAMING_CARD_MIN_UPDATE_INTERVAL_MS
+        now - streamingCardLastUpdateAt <
+          FEISHU_STREAMING_CARD_MIN_UPDATE_INTERVAL_MS
       ) {
         return;
       }
@@ -5262,11 +6038,16 @@ export function createBotsService(
           const requestController = new AbortController();
           streamingCardRequestControllers.add(requestController);
           const timeoutId = setTimeout(() => {
-            requestController.abort(new Error("Feishu streaming card request timed out."));
+            requestController.abort(
+              new Error("Feishu streaming card request timed out."),
+            );
           }, FEISHU_STREAMING_CARD_REQUEST_TIMEOUT_MS);
           try {
             for (
-              let index = Math.min(streamingCardSegmentIndex, states.length - 1);
+              let index = Math.min(
+                streamingCardSegmentIndex,
+                states.length - 1,
+              );
               index < states.length;
               index += 1
             ) {
@@ -5274,7 +6055,11 @@ export function createBotsService(
               const segmentState = states[index]!;
               operation = streamingCardHandle ? "update" : "create";
               const request = !streamingCardHandle
-                ? adapter?.createStreamingReplyCard?.(bot, segmentState, requestController.signal)
+                ? adapter?.createStreamingReplyCard?.(
+                    bot,
+                    segmentState,
+                    requestController.signal,
+                  )
                 : adapter?.updateStreamingReplyCard?.(
                     bot,
                     streamingCardHandle,
@@ -5296,7 +6081,9 @@ export function createBotsService(
                 if (!streamingCardHandle) {
                   // Bug 根因：飞书创建接口可能 code=0 却不返回 message_id。若把这种静默失败
                   // 当成成功推进 segmentIndex，未投递的中间段会被永久跳过；必须统一进入退避重试。
-                  throw new Error("Feishu create streaming card returned no message_id.");
+                  throw new Error(
+                    "Feishu create streaming card returned no message_id.",
+                  );
                 }
               }
               if (index < states.length - 1) {
@@ -5315,13 +6102,16 @@ export function createBotsService(
             // task_error 或 typing 清理等生命周期事件。
             if (persistentPrivate) {
               privateDeliveryFailed = true;
-              privateCardDeliveryUnknown = !isRecord(error) || error.deliveryRejected !== true;
+              privateCardDeliveryUnknown =
+                !isRecord(error) || error.deliveryRejected !== true;
             }
             streamingCardConsecutiveFailures += 1;
-            const errorMessage = error instanceof Error ? error.message : String(error);
+            const errorMessage =
+              error instanceof Error ? error.message : String(error);
             onDeliveryResult(bot, errorMessage);
             if (
-              streamingCardConsecutiveFailures >= FEISHU_STREAMING_CARD_FAILURE_CIRCUIT_THRESHOLD
+              streamingCardConsecutiveFailures >=
+              FEISHU_STREAMING_CARD_FAILURE_CIRCUIT_THRESHOLD
             ) {
               streamingCardCircuitOpen = true;
               botsLogger.warn(
@@ -5367,7 +6157,10 @@ export function createBotsService(
       ) {
         return;
       }
-      const extracted = extractBotAssistantResponseMessages(assistantReplyBuffer, force);
+      const extracted = extractBotAssistantResponseMessages(
+        assistantReplyBuffer,
+        force,
+      );
       assistantReplyBuffer = extracted.rest;
       for (const text of extracted.messages) {
         sentAnyAssistantReply = true;
@@ -5403,7 +6196,8 @@ export function createBotsService(
         if (!(await isPrivateAuthorized())) return;
         const runId = event.inputId ?? event.traceId;
         if (event.type === "task_run_started") {
-          if (runId && (terminalRuns.has(runId) || resultRunId === runId)) return;
+          if (runId && (terminalRuns.has(runId) || resultRunId === runId))
+            return;
           resultRunId = runId ?? "";
           privateDeliveryFailed = false;
           privateCardDeliveryUnknown = false;
@@ -5435,17 +6229,23 @@ export function createBotsService(
         } else {
           if (runId && terminalRuns.has(runId)) return;
           if (!resultRunId && runId) resultRunId = runId;
-          if (resultSourceCommandId && event.inputId && resultSourceCommandId !== event.inputId)
+          if (
+            resultSourceCommandId &&
+            event.inputId &&
+            resultSourceCommandId !== event.inputId
+          )
             return;
         }
         if (event.type === "task_complete" || event.type === "task_error") {
           if (runId) terminalRuns.add(runId);
           // continuous 不重放旧轮；有界保留重复终态保护。
-          if (terminalRuns.size > 128) terminalRuns.delete(terminalRuns.values().next().value!);
+          if (terminalRuns.size > 128)
+            terminalRuns.delete(terminalRuns.values().next().value!);
         }
         if (
           !imInteractionRun &&
-          (event.type === "permission_request" || event.type === "elicitation_request")
+          (event.type === "permission_request" ||
+            event.type === "elicitation_request")
         )
           return;
       }
@@ -5500,7 +6300,8 @@ export function createBotsService(
               providerMessageId: input.source.messageId,
               mentionedBot: input.source.mentionedBot,
               threadId: input.source.threadId ?? context.group.threadId,
-              rootMessageId: input.source.rootMessageId ?? context.group.rootMessageId,
+              rootMessageId:
+                input.source.rootMessageId ?? context.group.rootMessageId,
               conversationThreadId: context.group.threadId ?? null,
             };
             await sendOutbound(bot, {
@@ -5515,26 +6316,33 @@ export function createBotsService(
           }
           return;
         }
-        if (event.type === "task_run_started") resultInputOrigin = event.inputOrigin ?? "desktop";
+        if (event.type === "task_run_started")
+          resultInputOrigin = event.inputOrigin ?? "desktop";
         if (event.type === "task_run_started" || event.inputId) {
-          const source = event.inputId ? latest.group.inputs?.[event.inputId]?.source : undefined;
+          const source = event.inputId
+            ? latest.group.inputs?.[event.inputId]?.source
+            : undefined;
           // 按本轮可信输入解析，不能把无来源的桌面结果或重试归给群 owner/最近发言者。
           const isTopicReply = !!(source?.threadId ?? latest.group.threadId);
           resultMentionedUserIds = source
             ? [
                 ...new Set(
                   (source.messages ?? [source])
-                    .filter((item) => !isTopicReply || item.mentionedBot === true)
+                    .filter(
+                      (item) => !isTopicReply || item.mentionedBot === true,
+                    )
                     .map((item) => item.senderId),
                 ),
               ]
             : undefined;
-          if (!resultMentionedUserIds?.length) resultMentionedUserIds = undefined;
+          if (!resultMentionedUserIds?.length)
+            resultMentionedUserIds = undefined;
           actor = {
             ...actor,
             providerUserId: source?.senderId ?? latest.group.ownerId,
             displayName:
-              source?.senderName ?? (resultInputOrigin === "mobile" ? "Mobile Web" : "Desktop"),
+              source?.senderName ??
+              (resultInputOrigin === "mobile" ? "Mobile Web" : "Desktop"),
             providerMessageId: source?.messageId,
             mentionedBot: source?.mentionedBot,
             threadId: source?.threadId ?? latest.group.threadId,
@@ -5547,7 +6355,12 @@ export function createBotsService(
           context.group = { ...latest.group, initiatorId: source?.senderId };
         }
         if (event.type === "task_run_started") {
-          await updateGroupInputReaction(bot, context, actor.providerMessageId, "working");
+          await updateGroupInputReaction(
+            bot,
+            context,
+            actor.providerMessageId,
+            "working",
+          );
           resultRunId = event.inputId ?? event.traceId;
           resultSourceCommandId = event.inputId;
           resultPart = 0;
@@ -5615,7 +6428,10 @@ export function createBotsService(
         await syncStreamingCardReply(event.type, true);
       }
       if (event.type === "tool_call_update" && supportsStreamingCardReply()) {
-        await syncStreamingCardReply(event.type, isBotToolCallReplyTerminal(event.status));
+        await syncStreamingCardReply(
+          event.type,
+          isBotToolCallReplyTerminal(event.status),
+        );
       }
       if (
         event.type === "tool_call_update" &&
@@ -5643,9 +6459,14 @@ export function createBotsService(
         const locale = await readMessageLocale();
         stopTyping(event.taskId);
         await sealStreamingCardReply();
-        await broadcastTaskListChange(context, event.taskId, "permission_request", {
-          permissionRequest: event,
-        });
+        await broadcastTaskListChange(
+          context,
+          event.taskId,
+          "permission_request",
+          {
+            permissionRequest: event,
+          },
+        );
         // Bugfix: UI 会把 ZCode Agent 原始权限选项规整成“允许/始终允许/拒绝”的固定顺序和文案；
         // 机器人之前直接展示 provider 原始英文 name，还额外加取消按钮，导致同一个权限请求在飞书和 UI 看起来不一致。
         const permissionOptions = sortBotPermissionOptions(event.options);
@@ -5664,7 +6485,11 @@ export function createBotsService(
                 ? `/deny ${event.requestId}`
                 : `/approve ${event.requestId} ${option.optionId}`,
               label: formatBotPermissionOptionLabel(option, locale),
-              description: formatBotPermissionOptionDescription(option, event, locale),
+              description: formatBotPermissionOptionDescription(
+                option,
+                event,
+                locale,
+              ),
             };
           }),
         };
@@ -5681,7 +6506,11 @@ export function createBotsService(
           };
         });
         Object.assign(context, { pendingPermissionOptions });
-        await writeContext({ ...context, pendingPermissionOptions }, false, context.activeTaskId);
+        await writeContext(
+          { ...context, pendingPermissionOptions },
+          false,
+          context.activeTaskId,
+        );
         const [permissionReply] = await createSelectionReply(
           actor,
           permissionSelection,
@@ -5725,14 +6554,26 @@ export function createBotsService(
       }
       if (event.type === "elicitation_request") {
         await sealStreamingCardReply();
-        await handleElicitationRequest(bot, user, actor, context, event, resultMentionedUserIds);
+        await handleElicitationRequest(
+          bot,
+          user,
+          actor,
+          context,
+          event,
+          resultMentionedUserIds,
+        );
         return;
       }
       if (event.type === "elicitation_response") {
         await clearPendingElicitationForRequest(context, event.requestId);
-        await broadcastTaskListChange(context, event.taskId, "elicitation_resolved", {
-          requestId: event.requestId,
-        });
+        await broadcastTaskListChange(
+          context,
+          event.taskId,
+          "elicitation_resolved",
+          {
+            requestId: event.requestId,
+          },
+        );
         return;
       }
       if (event.type === "task_complete" || event.type === "task_error") {
@@ -5748,7 +6589,9 @@ export function createBotsService(
                 : "done",
           );
         }
-        privateImTraces.delete(JSON.stringify([streamSubscriptionKey, event.traceId]));
+        privateImTraces.delete(
+          JSON.stringify([streamSubscriptionKey, event.traceId]),
+        );
         runningTasks.delete(event.taskId);
         liveStatusProgressByTaskId.delete(event.taskId);
         stopTyping(event.taskId);
@@ -5760,7 +6603,9 @@ export function createBotsService(
             context.activeTaskId,
           );
         }
-        const transientCard = transientInteractionCards.get(getActorContextKey(actor));
+        const transientCard = transientInteractionCards.get(
+          getActorContextKey(actor),
+        );
         if (transientCard?.taskId === event.taskId) {
           const pendingElicitation = context.pendingElicitation;
           await finalizeTransientInteractionCard(
@@ -5785,9 +6630,11 @@ export function createBotsService(
         // Bugfix: ZCode Agent 终态事件可能先于 task index/meta 落盘广播到 Bots。
         // 如果这里立刻用旧 meta 更新 sidebar，随后列表再刷新到终态 meta，会出现状态/摘要跳一下。
         // 因此终态广播前短重试读取一次稳定 meta，尽量用同一帧完成 UI 增量更新。
-        const completedTask = await readTerminalTaskMeta(context, event.taskId, event.type).catch(
-          () => null,
-        );
+        const completedTask = await readTerminalTaskMeta(
+          context,
+          event.taskId,
+          event.type,
+        ).catch(() => null);
         await broadcastTaskListChange(
           context,
           event.taskId,
@@ -5826,7 +6673,10 @@ export function createBotsService(
           return;
         }
 
-        if (context.group && /stop|cancel|interrupt|abort/iu.test(event.stopReason)) {
+        if (
+          context.group &&
+          /stop|cancel|interrupt|abort/iu.test(event.stopReason)
+        ) {
           // 停止通知会触发群内其他机器人继续回复；主聊天与话题统一静默，前面的状态清理仍保留。
           return;
         }
@@ -5839,10 +6689,16 @@ export function createBotsService(
             workspaceIdentity: context.workspaceIdentity,
           })
           .catch(() => null);
-        const latestTurnChangeSummary = readLatestAssistantTurnChangeSummary(completedSnapshot);
+        const latestTurnChangeSummary =
+          readLatestAssistantTurnChangeSummary(completedSnapshot);
         if (supportsStreamingCardReply()) {
           const changeSummaryMessages = formatBotAssistantReplyBlocks(
-            createAssistantReplyBlocks([], new Map(), mode, latestTurnChangeSummary),
+            createAssistantReplyBlocks(
+              [],
+              new Map(),
+              mode,
+              latestTurnChangeSummary,
+            ),
             {
               workspacePath: context.workspacePath,
               locale,
@@ -5895,7 +6751,10 @@ export function createBotsService(
             return;
           await sendTaskOutbound(
             bot,
-            createOutbound(actor, locale === "en-US" ? "Task completed." : "任务已完成。"),
+            createOutbound(
+              actor,
+              locale === "en-US" ? "Task completed." : "任务已完成。",
+            ),
           );
           return;
         }
@@ -5920,12 +6779,19 @@ export function createBotsService(
         ) {
           const locale = await readMessageLocale();
           const texts = formatBotAssistantReplyBlocks(
-            createAssistantReplyBlocks(assistantParts, toolCalls, "assistant_changes", undefined),
+            createAssistantReplyBlocks(
+              assistantParts,
+              toolCalls,
+              "assistant_changes",
+              undefined,
+            ),
             { workspacePath: context.workspacePath, locale },
           );
           const text =
             texts.join("\n\n") ||
-            (event.type === "task_error" ? event.error : msg(locale, "received"));
+            (event.type === "task_error"
+              ? event.error
+              : msg(locale, "received"));
           const id = randomUUID();
           privateDeliveryFailed = false;
           failedPrivateDeliveries.set(bot.id, {
@@ -5988,7 +6854,9 @@ export function createBotsService(
               // 这里使用 bot 专属 continuous 订阅，避免远控恢复逻辑影响飞书/微信等 channel。
               deliveryKind: "bot-channel-continuous",
             })(receive)
-          : zcodeTaskService.onDynamicStreamEvent(context.activeTaskId!)(receive),
+          : zcodeTaskService.onDynamicStreamEvent(context.activeTaskId!)(
+              receive,
+            ),
       enqueueStreamEvent,
     );
     streamSubscriptions.set(streamSubscriptionKey, {
@@ -6007,7 +6875,8 @@ export function createBotsService(
         streamDisposable.dispose();
       },
     });
-    if (!context.group && !persistentPrivate) startTyping(bot, actor, context.activeTaskId);
+    if (!context.group && !persistentPrivate)
+      startTyping(bot, actor, context.activeTaskId);
   }
 
   async function createSelectionReply(
@@ -6023,7 +6892,8 @@ export function createBotsService(
     const supportsStructuredSelection = actor.provider !== "weixin";
     // Bugfix: 微信 /model 第一层选择的是供应商，之前复用 description 把模型列表也拼进同一行，
     // 导致用户还没选供应商就看到两层信息。纯文本通道先只展示供应商，模型放到下一层再展示。
-    const textSelection = stripModelProviderDescriptionsForTextSelection(selection);
+    const textSelection =
+      stripModelProviderDescriptionsForTextSelection(selection);
     const displaySelection = supportsStructuredSelection
       ? markedSelection
       : { ...textSelection, cancelLabel: markedSelection.cancelLabel };
@@ -6033,14 +6903,21 @@ export function createBotsService(
       ? displaySelection.title
       : formatSelectionFallback(displaySelection, locale);
     return [
-      createOutbound(actor, text, supportsStructuredSelection ? displaySelection : undefined, {
-        ...extras,
-        locale,
-      }),
+      createOutbound(
+        actor,
+        text,
+        supportsStructuredSelection ? displaySelection : undefined,
+        {
+          ...extras,
+          locale,
+        },
+      ),
     ];
   }
 
-  async function handleSelectionCancel(message: BotInboundMessage): Promise<BotOutboundMessage[]> {
+  async function handleSelectionCancel(
+    message: BotInboundMessage,
+  ): Promise<BotOutboundMessage[]> {
     const locale = await readMessageLocale();
     const actorContextKey = getActorContextKey(message.actor);
     const pendingSelection = pendingSelectionsByContext.get(actorContextKey);
@@ -6056,7 +6933,9 @@ export function createBotsService(
       const pending = auth.context.pendingElicitation;
       if (!pending) {
         clearPendingSelection(message.actor);
-        return [createOutbound(message.actor, msg(auth.locale, "elicitationExpired"))];
+        return [
+          createOutbound(message.actor, msg(auth.locale, "elicitationExpired")),
+        ];
       }
       clearPendingSelection(message.actor);
       return submitPendingElicitation(auth, message.actor, pending, "cancel");
@@ -6071,7 +6950,12 @@ export function createBotsService(
           "cancel",
         );
       }
-      return [createOutbound(message.actor, msg(locale, "unknownCommand", { command: "0" }))];
+      return [
+        createOutbound(
+          message.actor,
+          msg(locale, "unknownCommand", { command: "0" }),
+        ),
+      ];
     }
     clearPendingSelection(message.actor);
     const auth = await withAuthorizedContext(message, "message");
@@ -6091,7 +6975,9 @@ export function createBotsService(
     ].join("::");
   }
 
-  function buildRemoteReconnectDeliveryKey(message: BotInboundMessage): string | null {
+  function buildRemoteReconnectDeliveryKey(
+    message: BotInboundMessage,
+  ): string | null {
     const providerMessageId = message.actor.providerMessageId?.trim();
     if (!providerMessageId) {
       return null;
@@ -6114,7 +7000,10 @@ export function createBotsService(
 
   async function performRemoteReconnect(
     message: BotInboundMessage,
-    auth: Extract<Awaited<ReturnType<typeof withAuthorizedContext>>, { ok: true }>,
+    auth: Extract<
+      Awaited<ReturnType<typeof withAuthorizedContext>>,
+      { ok: true }
+    >,
   ): Promise<BotOutboundMessage[]> {
     let result: BotRemoteWorkspaceReconnectResult;
     try {
@@ -6155,14 +7044,19 @@ export function createBotsService(
     message: BotInboundMessage,
     options: {
       onReconnectStart?: (
-        auth: Extract<Awaited<ReturnType<typeof withAuthorizedContext>>, { ok: true }>,
+        auth: Extract<
+          Awaited<ReturnType<typeof withAuthorizedContext>>,
+          { ok: true }
+        >,
       ) => Promise<void>;
     } = {},
   ): Promise<BotOutboundMessage[]> {
     const auth = await withAuthorizedContext(message, "workspace");
     if (!auth.ok) return auth.reply;
     if (!auth.context.workspaceIdentity) {
-      return [createOutbound(message.actor, msg(auth.locale, "remoteReconnectLocal"))];
+      return [
+        createOutbound(message.actor, msg(auth.locale, "remoteReconnectLocal")),
+      ];
     }
     if (!deps.remoteWorkspaceService) {
       return [
@@ -6188,7 +7082,10 @@ export function createBotsService(
       recentRemoteReconnectDeliveryAtByKey.set(deliveryKey, now);
     }
 
-    const reconnectKey = buildRemoteReconnectCommandKey(message.actor, auth.context);
+    const reconnectKey = buildRemoteReconnectCommandKey(
+      message.actor,
+      auth.context,
+    );
     const pendingReconnect = pendingRemoteReconnectsByKey.get(reconnectKey);
     if (pendingReconnect) {
       await pendingReconnect.catch(() => []);
@@ -6254,16 +7151,25 @@ export function createBotsService(
         reply: [createOutbound(message.actor, msg(locale, "botDisabled"))],
       };
     }
-    if (message.actor.chatType !== "private" && !isFeishuBotProvider(bot.provider)) {
+    if (
+      message.actor.chatType !== "private" &&
+      !isFeishuBotProvider(bot.provider) &&
+      bot.provider !== "qq"
+    ) {
       return {
         ok: false,
         reply: [createOutbound(message.actor, msg(locale, "privateChatOnly"))],
       };
     }
     const groupContext =
-      message.actor.chatType === "group" ? await readContext(message.actor, bot) : null;
+      message.actor.chatType === "group"
+        ? await readContext(message.actor, bot)
+        : null;
     if (message.actor.chatType === "group") {
-      if (!groupContext?.group?.enabled || groupContext.group.ownerId !== bot.providerUserId) {
+      if (
+        !groupContext?.group?.enabled ||
+        groupContext.group.ownerId !== bot.providerUserId
+      ) {
         return {
           ok: false,
           reply: [
@@ -6285,8 +7191,11 @@ export function createBotsService(
           !card ||
           card.chatId !== groupContext.group.chatId ||
           card.threadId !== message.actor.threadId ||
-          getBotConversationKey({ botId: bot.id, chatType: "group", ...card }) !==
-            getBotStateKey(groupContext) ||
+          getBotConversationKey({
+            botId: bot.id,
+            chatType: "group",
+            ...card,
+          }) !== getBotStateKey(groupContext) ||
           card.taskId !== groupContext.activeTaskId ||
           card.authorizationId !== groupContext.group.authorizationId
         ) {
@@ -6294,7 +7203,10 @@ export function createBotsService(
             ok: false,
             reply: [
               {
-                ...createOutbound(message.actor, msg(locale, "elicitationExpired")),
+                ...createOutbound(
+                  message.actor,
+                  msg(locale, "elicitationExpired"),
+                ),
                 callbackToastOnly: true,
               },
             ],
@@ -6316,10 +7228,14 @@ export function createBotsService(
                 : administratorReply(
                     message.actor,
                     bot,
-                    requestedCommand === "approve" && groupContext.pendingPermissionOptions?.[0]
+                    requestedCommand === "approve" &&
+                      groupContext.pendingPermissionOptions?.[0]
                       ? `permission:${groupContext.activeTaskId}:${groupContext.pendingPermissionOptions[0].requestId}`
                       : "owner-command",
-                    createOutbound(message.actor, msg(locale, "groupOwnerOnly")),
+                    createOutbound(
+                      message.actor,
+                      msg(locale, "groupOwnerOnly"),
+                    ),
                   )),
               callbackToastOnly: true,
             },
@@ -6350,7 +7266,9 @@ export function createBotsService(
     if (!isUserCommandAllowed(user, requestedCommand)) {
       return {
         ok: false,
-        reply: [createOutbound(message.actor, msg(locale, "commandNotAllowed"))],
+        reply: [
+          createOutbound(message.actor, msg(locale, "commandNotAllowed")),
+        ],
       };
     }
     if (groupContext?.group) {
@@ -6366,19 +7284,24 @@ export function createBotsService(
           message.actor.providerUserId,
           groupContext.group.ownerId,
           groupContext.group.initiatorId,
-          groupContext.pendingElicitation?.renderContext?.kind === "plan_approval",
+          groupContext.pendingElicitation?.renderContext?.kind ===
+            "plan_approval",
         )
       ) {
         return {
           ok: false,
           reply: [
             {
-              ...(groupContext.pendingElicitation?.renderContext?.kind === "plan_approval"
+              ...(groupContext.pendingElicitation?.renderContext?.kind ===
+              "plan_approval"
                 ? administratorReply(
                     message.actor,
                     bot,
                     `plan:${groupContext.activeTaskId}:${groupContext.pendingElicitation.requestId}`,
-                    createOutbound(message.actor, msg(locale, "groupOwnerOnly")),
+                    createOutbound(
+                      message.actor,
+                      msg(locale, "groupOwnerOnly"),
+                    ),
                   )
                 : createOutbound(message.actor, msg(locale, "groupOwnerOnly"))),
               callbackToastOnly: true,
@@ -6462,7 +7385,11 @@ export function createBotsService(
       return [createOutbound(message.actor, msg(locale, "bindPrivateOnly"))];
     }
     const record = bindCodes.get(code.trim().toUpperCase());
-    if (!record || record.expiresAt <= Date.now() || record.botId !== message.botId) {
+    if (
+      !record ||
+      record.expiresAt <= Date.now() ||
+      record.botId !== message.botId
+    ) {
       return [createOutbound(message.actor, msg(locale, "bindCodeInvalid"))];
     }
     const config = await repo.readConfig();
@@ -6472,29 +7399,53 @@ export function createBotsService(
     }
     // Bot 配置化后 /bind 只绑定当前 bot，不再向 bot 追加 allowedUsers。
     // 重新绑定会覆盖旧 providerUserId，保证一个 bot 同一时间只有一个沟通对象。
+    let boundProviderUserId = message.actor.providerUserId;
+    let boundQQAppId = bot.qqAppId;
+    if (bot.provider === "qq" && !bot.qqAppId) {
+      // QQ 扫码注册把机器人 AppID 写入 providerUserId；绑定用户 openid 前，
+      // 先把 AppID 迁移到 qqAppId（凭据格式为 "appId:appSecret"），
+      // 避免绑定后 providerUserId 被 openid 覆盖导致 QQ 鉴权/WebSocket 断连。
+      const rawCredential = bot.credentialRef
+        ? await deps.credentialService.load(bot.credentialRef)
+        : null;
+      const credentialAppId = rawCredential
+        ? rawCredential.split(":")[0]?.trim()
+        : undefined;
+      if (credentialAppId && credentialAppId === bot.providerUserId?.trim()) {
+        boundQQAppId = credentialAppId;
+        boundProviderUserId = message.actor.providerUserId;
+      }
+    }
     const nextBot: BotConfig = {
       ...bot,
-      providerUserId: message.actor.providerUserId,
+      providerUserId: boundProviderUserId,
       displayName: message.actor.displayName,
       allowedWorkspaces: normalizeAllowedWorkspaces(record.allowedWorkspaces),
       allowedCommands: normalizeBotCommandPolicy(bot.allowedCommands),
       replyMode: normalizeBotReplyGranularity(bot.provider, bot.replyMode),
+      ...(boundQQAppId !== undefined ? { qqAppId: boundQQAppId } : {}),
     };
     validateBotConfig(config, nextBot);
     await writeBotConfig({
       ...config,
-      bots: config.bots.map((item) => (item.id === nextBot.id ? nextBot : item)),
+      bots: config.bots.map((item) =>
+        item.id === nextBot.id ? nextBot : item,
+      ),
     });
     bindCodes.delete(record.code);
     return [
       createOutbound(
         message.actor,
-        [msg(locale, "bindSuccess"), buildHelpText(locale, nextBot)].join("\n\n"),
+        [msg(locale, "bindSuccess"), buildHelpText(locale, nextBot)].join(
+          "\n\n",
+        ),
       ),
     ];
   }
 
-  async function handleStatus(message: BotInboundMessage): Promise<BotOutboundMessage[]> {
+  async function handleStatus(
+    message: BotInboundMessage,
+  ): Promise<BotOutboundMessage[]> {
     const auth = await withAuthorizedContext(message, "status");
     if (!auth.ok) {
       return auth.reply;
@@ -6533,7 +7484,10 @@ export function createBotsService(
     return `${msg(locale, labelId)}: ${value}`;
   }
 
-  function formatStatusStateValue(locale: Locale | undefined, state: string): string {
+  function formatStatusStateValue(
+    locale: Locale | undefined,
+    state: string,
+  ): string {
     if (locale === "en-US") {
       return state;
     }
@@ -6562,11 +7516,17 @@ export function createBotsService(
     context: BotContextState,
     locale: Locale | undefined,
   ): Promise<string> {
-    const workspace = (await listWorkspaceRefs()).find((item) => item.id === context.workspaceId);
+    const workspace = (await listWorkspaceRefs()).find(
+      (item) => item.id === context.workspaceId,
+    );
     if (!(await isRemoteWorkspaceConnected(context))) {
       const draftOptions = context.draftOptions;
       return [
-        formatStatusLine(locale, "statusWorkspace", workspace?.label ?? context.workspacePath),
+        formatStatusLine(
+          locale,
+          "statusWorkspace",
+          workspace?.label ?? context.workspacePath,
+        ),
         formatStatusLine(
           locale,
           "statusModel",
@@ -6576,7 +7536,11 @@ export function createBotsService(
           ),
         ),
         "------",
-        formatStatusLine(locale, "statusTask", context.activeTaskId ?? msg(locale, "statusDraft")),
+        formatStatusLine(
+          locale,
+          "statusTask",
+          context.activeTaskId ?? msg(locale, "statusDraft"),
+        ),
         formatStatusLine(
           locale,
           "statusState",
@@ -6609,7 +7573,8 @@ export function createBotsService(
     const statusTask = activeTask ?? activeTaskSnapshot?.meta ?? null;
     // Bugfix: 任务结束后 /status 只保留最终状态，避免把最后一次工具/思考进度误看成仍在执行。
     const latestProgress =
-      context.activeTaskId && (!statusTask || taskStatus(statusTask) === "running")
+      context.activeTaskId &&
+      (!statusTask || taskStatus(statusTask) === "running")
         ? (liveStatusProgressByTaskId.get(context.activeTaskId)?.text ??
           readLatestTaskProgress(activeTaskSnapshot))
         : null;
@@ -6620,7 +7585,8 @@ export function createBotsService(
       ? await listActiveTaskConfigOptions(context, context.activeTaskId)
       : [];
     const isDraftStatus = context.mode === "draft" || !context.activeTaskId;
-    const draftOptions = !statusTask && isDraftStatus ? await ensureDraftOptions(context) : null;
+    const draftOptions =
+      !statusTask && isDraftStatus ? await ensureDraftOptions(context) : null;
     // Bot Draft 属于 Select：未显式固定模型时只展示目标 Host 当前首选，不把默认值写回配置。
     const draftView = draftOptions
       ? await readModelSelectionView(context, draftOptions.modelSelection)
@@ -6636,7 +7602,11 @@ export function createBotsService(
     const statusModelLabel = await formatStatusModelLabel(statusModel, context);
     return (
       [
-        formatStatusLine(locale, "statusWorkspace", workspace?.label ?? context.workspacePath),
+        formatStatusLine(
+          locale,
+          "statusWorkspace",
+          workspace?.label ?? context.workspacePath,
+        ),
         // Bugfix: active task 显示真实 task 状态；草稿态显示 draftOptions。
         // /new 后草稿继承自当前 task，继续显示 "-" 会让用户误以为继承失败。
         formatStatusLine(locale, "statusModel", statusModelLabel),
@@ -6647,17 +7617,28 @@ export function createBotsService(
         formatStatusLine(
           locale,
           "statusState",
-          formatStatusStateValue(locale, statusTask ? taskStatus(statusTask) : "draft"),
+          formatStatusStateValue(
+            locale,
+            statusTask ? taskStatus(statusTask) : "draft",
+          ),
         ),
         workedDurationMs !== null
-          ? formatStatusLine(locale, "statusWorked", formatTaskRunningDuration(workedDurationMs))
+          ? formatStatusLine(
+              locale,
+              "statusWorked",
+              formatTaskRunningDuration(workedDurationMs),
+            )
           : null,
-        latestProgress ? formatStatusLine(locale, "statusProgress", latestProgress) : null,
+        latestProgress
+          ? formatStatusLine(locale, "statusProgress", latestProgress)
+          : null,
       ].filter(Boolean) as string[]
     ).join("\n");
   }
 
-  async function handleHelp(message: BotInboundMessage): Promise<BotOutboundMessage[]> {
+  async function handleHelp(
+    message: BotInboundMessage,
+  ): Promise<BotOutboundMessage[]> {
     const auth = await withAuthorizedContext(message, "help");
     if (!auth.ok) {
       return auth.reply;
@@ -6691,8 +7672,11 @@ export function createBotsService(
           : "@当前机器人提交需求；/answer 回答自己发起请求中的问题。",
       );
       if (groupRole === "owner") {
-        lines.push("/enable · /disable · /task · /stop · /approve · /deny · /reconnect");
-        if (bot.allowedCommands.workspace !== false) lines.push("/history on|off");
+        lines.push(
+          "/enable · /disable · /task · /stop · /approve · /deny · /reconnect",
+        );
+        if (bot.allowedCommands.workspace !== false)
+          lines.push("/history on|off");
       }
     }
     for (const command of BOT_MENU_COMMAND_ORDER) {
@@ -6700,7 +7684,9 @@ export function createBotsService(
         groupRole &&
         (command === "bind" ||
           command === "reply" ||
-          (groupRole === "member" && command !== "help" && command !== "status"))
+          (groupRole === "member" &&
+            command !== "help" &&
+            command !== "status"))
       )
         continue;
       if (command === "help" || command === "bind") {
@@ -6735,7 +7721,8 @@ export function createBotsService(
     const backgroundRevision = context.group.backgroundHistory?.revision;
     let historyDisabled = false;
     const inputThreadId = message.actor.threadId ?? context.group.threadId;
-    const inputRootMessageId = message.actor.rootMessageId ?? context.group.rootMessageId;
+    const inputRootMessageId =
+      message.actor.rootMessageId ?? context.group.rootMessageId;
     if (inputThreadId) {
       const parent = (await repo.readState()).bots[
         getBotConversationKey({
@@ -6745,16 +7732,22 @@ export function createBotsService(
         })
       ];
       historyDisabled = parent?.group?.historyEnabled === false;
-      if (!historyDisabled && topicHistoryReady.get(getBotStateKey(context)) !== generation) {
+      if (
+        !historyDisabled &&
+        topicHistoryReady.get(getBotStateKey(context)) !== generation
+      ) {
         const accepted = Object.values(context.group.inputs ?? {}).filter(
-          (input) => input.admission === "accepted" && input.source.threadId === inputThreadId,
+          (input) =>
+            input.admission === "accepted" &&
+            input.source.threadId === inputThreadId,
         );
         const checkpoint = context.group.backgroundHistory
           ? context.group.backgroundHistory.checkpoint
           : accepted.at(-1)?.source.messageId;
         try {
           const reader = providers[bot.provider]?.readTopicHistory;
-          if (!reader || !inputRootMessageId) throw new Error("Topic history reader unavailable");
+          if (!reader || !inputRootMessageId)
+            throw new Error("Topic history reader unavailable");
           topicContext = await reader(bot, {
             chatId: context.group.chatId,
             threadId: inputThreadId,
@@ -6765,13 +7758,15 @@ export function createBotsService(
           const ingested = new Set(
             accepted.flatMap(
               (input) =>
-                input.source.messages?.map((original) => original.messageId) ?? [
-                  input.source.messageId,
-                ],
+                input.source.messages?.map(
+                  (original) => original.messageId,
+                ) ?? [input.source.messageId],
             ),
           );
           topicContext.messages = topicContext.messages.filter(
-            (item) => !ingested.has(item.id) && item.id !== message.referencedMessage?.messageId,
+            (item) =>
+              !ingested.has(item.id) &&
+              item.id !== message.referencedMessage?.messageId,
           );
         } catch (error) {
           botsLogger.warn(
@@ -6803,25 +7798,37 @@ export function createBotsService(
     topicBatch?: PreparedTopicMessage[],
     isCurrent = () => true,
   ): Promise<BotOutboundMessage[]> {
-    if (!context.group || !context.activeTaskId || !isFeishuBotProvider(bot.provider))
+    if (
+      !context.group ||
+      !context.activeTaskId ||
+      !isFeishuBotProvider(bot.provider)
+    )
       throw new Error("Group context is missing");
     const service = await resolveZCodeTaskServiceForContext(context);
     if (!service.submitBotGroupInput)
       throw new Error("Runtime does not support group input admission");
     const messageId = message.actor.providerMessageId;
     if (!messageId) throw new Error("Group message ID is required");
-    const commandId = botGroupCommandId(bot.id, context.group.chatId, messageId);
+    const commandId = botGroupCommandId(
+      bot.id,
+      context.group.chatId,
+      messageId,
+    );
     const { topicContext } = history;
     const inputThreadId = message.actor.threadId ?? context.group.threadId;
-    const inputRootMessageId = message.actor.rootMessageId ?? context.group.rootMessageId;
+    const inputRootMessageId =
+      message.actor.rootMessageId ?? context.group.rootMessageId;
     // 历史/附件准备期间控制通道可以停用群；不能用准备前的授权继续提交。
-    const admissionContext = (await repo.readState()).bots[getBotStateKey(context)];
+    const admissionContext = (await repo.readState()).bots[
+      getBotStateKey(context)
+    ];
     const admissionBot = findBot(await repo.readConfig(), bot.id);
     if (
       !admissionContext?.group?.enabled ||
       !admissionBot?.enabled ||
       admissionContext.group.ownerId !== admissionBot.providerUserId ||
-      admissionContext.group.authorizationId !== context.group.authorizationId ||
+      admissionContext.group.authorizationId !==
+        context.group.authorizationId ||
       admissionContext.activeTaskId !== context.activeTaskId
     )
       throw new Error("Group authorization changed before input admission");
@@ -6831,40 +7838,51 @@ export function createBotsService(
     let rootIncluded = Object.values(admissionContext.group.inputs ?? {}).some(
       (input) => input.admission === "accepted",
     );
-    const messages = topicBatch?.map(({ message: original, prepared: material }) => {
-      const quote = original.referencedMessage;
-      const isRoot = !!inputRootMessageId && quote?.messageId === inputRootMessageId;
-      const includeQuote = quote && !(isRoot && rootIncluded);
-      const attachmentIndexes: number[] = [];
-      let hasRootAttachment = false;
-      material.zcodeAttachments.forEach((attachment, index) => {
-        const resourceMessageId =
-          original.attachments?.[index]?.providerMetadata?.resourceMessageId;
-        const rootAttachment = !!inputRootMessageId && resourceMessageId === inputRootMessageId;
-        hasRootAttachment ||= rootAttachment;
-        // 根引用可能在上一轮接收前就已下载；提交时同时去重资源，不能只隐藏引用正文。
-        if (rootAttachment && rootIncluded) return;
-        attachmentIndexes.push(admittedAttachments.length);
-        admittedAttachments.push(attachment);
-      });
-      attachmentOffset += material.zcodeAttachments.length;
-      if ((isRoot && includeQuote) || hasRootAttachment) rootIncluded = true;
-      return {
-        messageId: original.actor.providerMessageId!,
-        senderId: original.actor.providerUserId,
-        mentionedBot: original.mentionedBot === true,
-        contentParts: original.contentParts,
-        senderName: original.actor.displayName ?? original.actor.providerUserId,
-        text: original.text,
-        ...(includeQuote ? { conversationQuotes: [quote] } : {}),
-        attachmentIndexes,
-      };
-    });
+    const messages = topicBatch?.map(
+      ({ message: original, prepared: material }) => {
+        const quote = original.referencedMessage;
+        const isRoot =
+          !!inputRootMessageId && quote?.messageId === inputRootMessageId;
+        const includeQuote = quote && !(isRoot && rootIncluded);
+        const attachmentIndexes: number[] = [];
+        let hasRootAttachment = false;
+        material.zcodeAttachments.forEach((attachment, index) => {
+          const resourceMessageId =
+            original.attachments?.[index]?.providerMetadata?.resourceMessageId;
+          const rootAttachment =
+            !!inputRootMessageId && resourceMessageId === inputRootMessageId;
+          hasRootAttachment ||= rootAttachment;
+          // 根引用可能在上一轮接收前就已下载；提交时同时去重资源，不能只隐藏引用正文。
+          if (rootAttachment && rootIncluded) return;
+          attachmentIndexes.push(admittedAttachments.length);
+          admittedAttachments.push(attachment);
+        });
+        attachmentOffset += material.zcodeAttachments.length;
+        if ((isRoot && includeQuote) || hasRootAttachment) rootIncluded = true;
+        return {
+          messageId: original.actor.providerMessageId!,
+          senderId: original.actor.providerUserId,
+          mentionedBot: original.mentionedBot === true,
+          contentParts: original.contentParts,
+          senderName:
+            original.actor.displayName ?? original.actor.providerUserId,
+          text: original.text,
+          ...(includeQuote ? { conversationQuotes: [quote] } : {}),
+          attachmentIndexes,
+        };
+      },
+    );
     // 历史文本附件在各条原始附件之后追加，保留它且不归给后续消息。
-    if (topicBatch) admittedAttachments.push(...prepared.zcodeAttachments.slice(attachmentOffset));
+    if (topicBatch)
+      admittedAttachments.push(
+        ...prepared.zcodeAttachments.slice(attachmentOffset),
+      );
     const source = {
       authorizationId: context.group.authorizationId,
-      botIdentity: { name: bot.name, ...(message.botOpenId ? { openId: message.botOpenId } : {}) },
+      botIdentity: {
+        name: bot.name,
+        ...(message.botOpenId ? { openId: message.botOpenId } : {}),
+      },
       provider: bot.provider,
       botId: bot.id,
       chatId: context.group.chatId,
@@ -6886,11 +7904,18 @@ export function createBotsService(
       ...context.group,
       inputs: {
         ...context.group.inputs,
-        [commandId]: { taskId: context.activeTaskId, source, admission: "pending" },
+        [commandId]: {
+          taskId: context.activeTaskId,
+          source,
+          admission: "pending",
+        },
       },
     };
     await writeContext(context);
-    await watchTaskStream(bot, message.actor, context, { ...bot, replyMode: "summary_changes" });
+    await watchTaskStream(bot, message.actor, context, {
+      ...bot,
+      replyMode: "summary_changes",
+    });
     // 原文已经寄存为文本附件；不能再通过来源元信息把整份历史塞进 command frame。
     const { topicContext: archive, ...runtimeSource } = source;
     if (!isCurrent()) return [];
@@ -6900,7 +7925,9 @@ export function createBotsService(
       content: prepared.content,
       ...(topicBatch
         ? {
-            conversationQuotes: messages?.flatMap((entry) => entry.conversationQuotes ?? []) ?? [],
+            conversationQuotes:
+              messages?.flatMap((entry) => entry.conversationQuotes ?? []) ??
+              [],
           }
         : message.referencedMessage
           ? { conversationQuotes: [message.referencedMessage] }
@@ -6916,7 +7943,10 @@ export function createBotsService(
                 messageCount: archive.messages.length,
                 resourceMessages: archive.messages
                   .filter((record) => record.attachments?.length)
-                  .map((record) => ({ messageId: record.id, count: record.attachments!.length })),
+                  .map((record) => ({
+                    messageId: record.id,
+                    count: record.attachments!.length,
+                  })),
               },
             }
           : {}),
@@ -6927,7 +7957,8 @@ export function createBotsService(
       await writeContext(context, false, context.activeTaskId);
       throw new Error(ack.message ?? ack.reasonCode ?? "Input rejected");
     }
-    if (ack.result?.type !== "inputAccepted") throw new Error("Input admission outcome is unknown");
+    if (ack.result?.type !== "inputAccepted")
+      throw new Error("Input admission outcome is unknown");
     adminAttention.clear(message.actor, bot.providerUserId);
     context.group.inputs![commandId]!.admission = "accepted";
     if (context.group.threadId) context.group.topicActive = true;
@@ -6945,14 +7976,21 @@ export function createBotsService(
           if (
             history.topicContext &&
             history.backgroundRevision &&
-            current.group.backgroundHistory?.revision === history.backgroundRevision
+            current.group.backgroundHistory?.revision ===
+              history.backgroundRevision
           ) {
             delete current.group.backgroundHistory;
-            topicHistoryReady.set(getBotStateKey(current), historyGeneration(current));
+            topicHistoryReady.set(
+              getBotStateKey(current),
+              historyGeneration(current),
+            );
           }
         }
         for (const candidate of Object.values(state.bots)) {
-          if (candidate.botId === bot.id && candidate.group?.chatId === context.group!.chatId) {
+          if (
+            candidate.botId === bot.id &&
+            candidate.group?.chatId === context.group!.chatId
+          ) {
             delete candidate.group.topicAliases?.[context.group!.threadId!];
           }
         }
@@ -6999,7 +8037,11 @@ export function createBotsService(
                   },
                 ],
               },
-              { locale, groupSourceCommandId: commandId, groupTaskId: context.activeTaskId },
+              {
+                locale,
+                groupSourceCommandId: commandId,
+                groupTaskId: context.activeTaskId,
+              },
             ),
           ]
         : [];
@@ -7044,9 +8086,9 @@ export function createBotsService(
         state = latest?.group?.inputs?.[inputId]?.progress?.status ?? state;
       }
       // 合批只合并执行，表情仍属于每条原消息，不能只更新最后一条。
-      const messageIds = entry?.[1].source.messages?.map((message) => message.messageId) ?? [
-        messageId,
-      ];
+      const messageIds = entry?.[1].source.messages?.map(
+        (message) => message.messageId,
+      ) ?? [messageId];
       await Promise.all(
         messageIds.map((originalId) =>
           providers[bot.provider]?.updateInputReaction?.(
@@ -7101,15 +8143,22 @@ export function createBotsService(
                 message.actor,
                 auth.bot,
                 `queue-cancel:${sourceCommandId}`,
-                createOutbound(message.actor, msg(auth.locale, "groupOwnerOnly")),
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "groupOwnerOnly"),
+                ),
               )
-            : createOutbound(message.actor, msg(auth.locale, "groupOwnerOnly"))),
+            : createOutbound(
+                message.actor,
+                msg(auth.locale, "groupOwnerOnly"),
+              )),
           callbackToastOnly: true,
         },
       ];
     }
     const taskService = await resolveZCodeTaskServiceForContext(auth.context);
-    if (!taskService.cancelBotGroupInput) throw new Error("Runtime cannot cancel queued input");
+    if (!taskService.cancelBotGroupInput)
+      throw new Error("Runtime cannot cancel queued input");
     const ack = await taskService.cancelBotGroupInput({
       taskId: input.taskId,
       commandId: `cancel-${sourceCommandId}-${message.actor.providerMessageId}`,
@@ -7121,7 +8170,12 @@ export function createBotsService(
     });
     const accepted = ack.status === "accepted" || ack.status === "duplicate";
     if (accepted)
-      await updateGroupInputReaction(auth.bot, auth.context, input.source.messageId, "cancelled");
+      await updateGroupInputReaction(
+        auth.bot,
+        auth.context,
+        input.source.messageId,
+        "cancelled",
+      );
     return [
       createOutbound(
         message.actor,
@@ -7147,7 +8201,9 @@ export function createBotsService(
     botDeliveryTarget?: ZCodeAutomationBotDeliveryTarget,
     modelSelection?: ModelSelection,
   ): void {
-    privateImTraces.add(JSON.stringify([taskStreamKey(context, actor), traceId]));
+    privateImTraces.add(
+      JSON.stringify([taskStreamKey(context, actor), traceId]),
+    );
     streamSubscriptions.get(taskStreamKey(context, actor))?.imInput();
     // 私聊常驻订阅不再随每轮建立；必须在本次输入派发前接管 Typing，
     // 否则回调收尾会将它当作短命令表情立即删除。终态/交互等待沿用原清理路径。
@@ -7201,36 +8257,42 @@ export function createBotsService(
     ]);
     const existing = topicStops.get(key);
     if (existing) return existing;
-    const stopping = resolveZCodeTaskServiceForContext(context).then(async (service) => {
-      if (!service.stopBotTopicExecution) throw new Error("Topic stop is unavailable");
-      await service.stopBotTopicExecution({
-        taskId,
-        workspacePath: context.workspacePath,
-        workspaceIdentity: context.workspaceIdentity,
-        executionId,
-      });
-      if (sourceCommandId)
-        await serializeStateWrite(async () => {
-          const state = await repo.readState();
-          const latest = state.bots[getBotStateKey(context)];
-          const input = latest?.group?.inputs?.[sourceCommandId];
-          if (
-            !input ||
-            input.taskId !== taskId ||
-            input.progress?.status === "done" ||
-            input.progress?.status === "failed"
-          )
-            return;
-          input.progress = {
-            ...input.progress,
-            status: "stopped",
-            interruptionReason: "newMessage",
-          };
-          await repo.writeState(state);
+    const stopping = resolveZCodeTaskServiceForContext(context).then(
+      async (service) => {
+        if (!service.stopBotTopicExecution)
+          throw new Error("Topic stop is unavailable");
+        await service.stopBotTopicExecution({
+          taskId,
+          workspacePath: context.workspacePath,
+          workspaceIdentity: context.workspaceIdentity,
+          executionId,
         });
-      if (sourceCommandId)
-        await deps.broadcastService?.send({ channel: "bots:group-state", payload: {} });
-    });
+        if (sourceCommandId)
+          await serializeStateWrite(async () => {
+            const state = await repo.readState();
+            const latest = state.bots[getBotStateKey(context)];
+            const input = latest?.group?.inputs?.[sourceCommandId];
+            if (
+              !input ||
+              input.taskId !== taskId ||
+              input.progress?.status === "done" ||
+              input.progress?.status === "failed"
+            )
+              return;
+            input.progress = {
+              ...input.progress,
+              status: "stopped",
+              interruptionReason: "newMessage",
+            };
+            await repo.writeState(state);
+          });
+        if (sourceCommandId)
+          await deps.broadcastService?.send({
+            channel: "bots:group-state",
+            payload: {},
+          });
+      },
+    );
     topicStops.set(key, stopping);
     const release = () => {
       if (topicStops.get(key) === stopping) topicStops.delete(key);
@@ -7242,13 +8304,22 @@ export function createBotsService(
   async function cancelGroupTopicInputs(actor: BotActor): Promise<void> {
     // 群级撤销必须覆盖所有话题，包括尚未创建任务、仍在准备历史的输入。
     const states = (await repo.readState()).bots;
-    const keys = new Set([...Object.keys(states), ...topicContinuations.keys()]);
+    const keys = new Set([
+      ...Object.keys(states),
+      ...topicContinuations.keys(),
+    ]);
     await Promise.all(
       [...keys].flatMap((key) => {
         if (!key.startsWith("[")) return [];
         const [botId, chatId, threadId] = JSON.parse(key) as string[];
         return botId === actor.botId && chatId === actor.chatId && threadId
-          ? [cancelTopicInputs({ ...actor, threadId, conversationThreadId: undefined })]
+          ? [
+              cancelTopicInputs({
+                ...actor,
+                threadId,
+                conversationThreadId: undefined,
+              }),
+            ]
           : [];
       }),
     );
@@ -7267,7 +8338,9 @@ export function createBotsService(
     const bot = findBot(await repo.readConfig(), actor.botId);
     if (context && bot) {
       await Promise.all(
-        cancelledIds.map((id) => updateGroupInputReaction(bot, context, id, "cancelled")),
+        cancelledIds.map((id) =>
+          updateGroupInputReaction(bot, context, id, "cancelled"),
+        ),
       );
     }
     if (context?.activeTaskId) {
@@ -7283,7 +8356,9 @@ export function createBotsService(
     await publishTopicPreparation();
   }
 
-  async function admitAutoReplyTurn(message: BotInboundMessage): Promise<boolean> {
+  async function admitAutoReplyTurn(
+    message: BotInboundMessage,
+  ): Promise<boolean> {
     if (
       message.actor.chatType !== "group" ||
       message.groupCardAction ||
@@ -7319,7 +8394,9 @@ export function createBotsService(
         Object.values(group.inputs ?? {}).some(
           (input) =>
             input.source.messageId === id ||
-            input.source.messages?.some((original) => original.messageId === id),
+            input.source.messages?.some(
+              (original) => original.messageId === id,
+            ),
         )
       ) {
         // 真人重试仍走原有准备/命令幂等流程，但不能重复恢复机器人额度。
@@ -7329,7 +8406,9 @@ export function createBotsService(
       if (
         message.senderType === "app" &&
         (guard.consecutive >= 5 ||
-          (message.actor.threadId ? group.topicActive !== true : message.mentionedBot !== true))
+          (message.actor.threadId
+            ? group.topicActive !== true
+            : message.mentionedBot !== true))
       )
         return;
       group.autoReplyGuard = {
@@ -7342,7 +8421,9 @@ export function createBotsService(
     return admitted;
   }
 
-  async function receiveTopicMessage(message: BotInboundMessage): Promise<BotOutboundMessage[]> {
+  async function receiveTopicMessage(
+    message: BotInboundMessage,
+  ): Promise<BotOutboundMessage[]> {
     const key = getBotConversationKey(message.actor);
     const id = message.actor.providerMessageId;
     if (!id) throw new Error("Topic message identity is missing");
@@ -7365,7 +8446,9 @@ export function createBotsService(
     // 持久化接收去重在 handleMessage；这里只合并同时到达的同一事件。
     if (replies.has(id)) return [];
     const pendingReplies = replies;
-    const result = new Promise<BotOutboundMessage[]>((resolve) => pendingReplies.set(id, resolve));
+    const result = new Promise<BotOutboundMessage[]>((resolve) =>
+      pendingReplies.set(id, resolve),
+    );
     let continuation = topicContinuations.get(key);
     if (!continuation) {
       const continuationGeneration = topicGenerations.get(key) ?? 0;
@@ -7388,7 +8471,8 @@ export function createBotsService(
         },
         stopAndWait: async (executionId) => {
           const context = await current();
-          if (!context?.activeTaskId) throw new Error("Topic task disappeared during stop");
+          if (!context?.activeTaskId)
+            throw new Error("Topic task disappeared during stop");
           topicPreparation.setWaitingStop(key, true);
           await publishTopicPreparation();
           try {
@@ -7421,7 +8505,9 @@ export function createBotsService(
                     .join("\n\n"),
           };
           const isCurrent = () =>
-            batch.every((entry) => entry.generation === (topicGenerations.get(key) ?? 0));
+            batch.every(
+              (entry) => entry.generation === (topicGenerations.get(key) ?? 0),
+            );
           const outgoing = await handleMessage(combined, batch, isCurrent);
           const context = await current();
           const accepted = Object.values(context?.group?.inputs ?? {}).some(
@@ -7443,7 +8529,9 @@ export function createBotsService(
                 ),
               );
           }
-          const ids = batch.map((entry) => entry.message.actor.providerMessageId!);
+          const ids = batch.map(
+            (entry) => entry.message.actor.providerMessageId!,
+          );
           if (isCurrent()) {
             if (accepted) topicPreparation.remove(key, ids);
             else
@@ -7463,7 +8551,8 @@ export function createBotsService(
         },
         failed: async (ids, error) => {
           // 取消后的旧下载/停止异常不得修改新一代消息的状态或表情。
-          if (continuationGeneration !== (topicGenerations.get(key) ?? 0)) return;
+          if (continuationGeneration !== (topicGenerations.get(key) ?? 0))
+            return;
           topicPreparation.update(
             key,
             ids,
@@ -7475,7 +8564,9 @@ export function createBotsService(
           const bot = findBot(await repo.readConfig(), message.botId);
           if (context && bot)
             await Promise.all(
-              ids.map((id) => updateGroupInputReaction(bot, context, id, "failed")),
+              ids.map((id) =>
+                updateGroupInputReaction(bot, context, id, "failed"),
+              ),
             );
           for (const messageId of ids) {
             pendingReplies.get(messageId)?.(
@@ -7503,14 +8594,19 @@ export function createBotsService(
     const received = continuation.receive(id, async () => {
       const auth = await withAuthorizedContext(message, "message");
       if (!auth.ok) throw new BotReplyError(auth.reply);
-      if (generation !== (topicGenerations.get(key) ?? 0)) throw new Error("Topic input cancelled");
+      if (generation !== (topicGenerations.get(key) ?? 0))
+        throw new Error("Topic input cancelled");
       topicPreparation.add(key, message);
       await publishTopicPreparation();
       await updateGroupInputReaction(auth.bot, auth.context, id, "waiting");
       return {
         message,
         generation,
-        prepared: await prepareBotMessageContent(auth.bot, message, auth.locale),
+        prepared: await prepareBotMessageContent(
+          auth.bot,
+          message,
+          auth.locale,
+        ),
       };
     });
     if (!received) {
@@ -7572,14 +8668,17 @@ export function createBotsService(
       ? await prepareGroupTopicHistory(auth.bot, message, auth.context)
       : {};
     if (history.topicContext && topicBatch) {
-      const ids = new Set(topicBatch.map((entry) => entry.message.actor.providerMessageId));
+      const ids = new Set(
+        topicBatch.map((entry) => entry.message.actor.providerMessageId),
+      );
       history.topicContext.messages = history.topicContext.messages.filter(
         (entry) => !ids.has(entry.id),
       );
     }
     if (history.historyDisabled || history.historyError) {
       const en = auth.locale === "en-US";
-      const permissionDenied = history.historyError instanceof TopicHistoryPermissionError;
+      const permissionDenied =
+        history.historyError instanceof TopicHistoryPermissionError;
       const platformUrl =
         auth.bot.provider === "lark"
           ? "https://open.larksuite.com/app"
@@ -7608,7 +8707,9 @@ export function createBotsService(
     }
     adminAttention.clear(message.actor, auth.bot.providerUserId, "history");
     // commandText 属于单条消息；尾部纯 @ 不能抹掉停止期间批次里其他成员的有效需求。
-    const hasRequest = (topicBatch?.map((entry) => entry.message) ?? [message]).some((original) =>
+    const hasRequest = (
+      topicBatch?.map((entry) => entry.message) ?? [message]
+    ).some((original) =>
       Boolean(
         (original.commandText ?? original.text).trim() ||
         original.attachments?.length ||
@@ -7678,7 +8779,9 @@ export function createBotsService(
       preparedMessage = topicBatch
         ? {
             content: message.text,
-            zcodeAttachments: topicBatch.flatMap((entry) => entry.prepared.zcodeAttachments),
+            zcodeAttachments: topicBatch.flatMap(
+              (entry) => entry.prepared.zcodeAttachments,
+            ),
           }
         : await prepareBotMessageContent(auth.bot, message, auth.locale);
       const historyMaterial = history.topicContext;
@@ -7707,10 +8810,14 @@ export function createBotsService(
     if (!isCurrent()) return [];
     if (auth.context.mode === "draft" || !auth.context.activeTaskId) {
       const draftOptions =
-        auth.context.draftOptions ?? (await buildInitializedDraftOptions(auth.context));
+        auth.context.draftOptions ??
+        (await buildInitializedDraftOptions(auth.context));
       // 原因：直接提交旧账号身份会绕过统一解析。只在首次创建前解析原意图；
       // 后续创建、配置和首发固定这份结果；绑定后以 Session 原选择解析下一次新输入。
-      const selectionView = await readModelSelectionView(auth.context, draftOptions.modelSelection);
+      const selectionView = await readModelSelectionView(
+        auth.context,
+        draftOptions.modelSelection,
+      );
       const submissionModelSelection = draftOptions.modelSelection
         ? selectionView?.effectiveSelection
         : selectionView?.preferredSelection;
@@ -7718,7 +8825,10 @@ export function createBotsService(
         !submissionModelSelection ||
         (draftOptions.modelSelection && selectionView?.selectionIssue)
       ) {
-        throw new BotAdminRequiredError("model", "Bot 无法从目标 Host 解析 Submission 模型");
+        throw new BotAdminRequiredError(
+          "model",
+          "Bot 无法从目标 Host 解析 Submission 模型",
+        );
       }
       const submissionDraftOptions: BotDraftOptions = {
         ...draftOptions,
@@ -7730,7 +8840,9 @@ export function createBotsService(
             : {}),
         },
       };
-      const zcodeTaskService = await resolveZCodeTaskServiceForContext(auth.context);
+      const zcodeTaskService = await resolveZCodeTaskServiceForContext(
+        auth.context,
+      );
       const task = await zcodeTaskService.createTask({
         workspacePath: auth.context.workspacePath,
         workspaceIdentity: auth.context.workspaceIdentity,
@@ -7752,7 +8864,10 @@ export function createBotsService(
               ? [auth.context.group.topicTitle || auth.context.group.threadId]
               : []),
           ].join(" · ")
-        : deriveTaskTitle(preparedMessage.content, preparedMessage.zcodeAttachments);
+        : deriveTaskTitle(
+            preparedMessage.content,
+            preparedMessage.zcodeAttachments,
+          );
       const broadcastTask = taskTitle ? { ...task, title: taskTitle } : task;
       const traceId = generateTraceId(task.taskId);
       try {
@@ -7793,7 +8908,10 @@ export function createBotsService(
         // 切换已经持久化；通知失败不能让 callback 释放去重记录并重跑原消息。
         await sendOutbound(
           auth.bot,
-          createOutbound(message.actor, msg(auth.locale, "deletedTaskReplaced")),
+          createOutbound(
+            message.actor,
+            msg(auth.locale, "deletedTaskReplaced"),
+          ),
         ).catch((error: unknown) => {
           botsLogger.warn(
             undefined,
@@ -7850,7 +8968,9 @@ export function createBotsService(
         topicBatch,
         isCurrent,
       );
-    const zcodeTaskService = await resolveZCodeTaskServiceForContext(auth.context);
+    const zcodeTaskService = await resolveZCodeTaskServiceForContext(
+      auth.context,
+    );
     await zcodeTaskService.resumeTask({
       taskId: auth.context.activeTaskId,
       workspacePath: auth.context.workspacePath,
@@ -7868,21 +8988,30 @@ export function createBotsService(
     if (!effectiveSelection || selectionView?.selectionIssue) {
       throw new Error(msg(auth.locale, "sessionModelUnavailable"));
     }
-    await broadcastTaskListChange(auth.context, auth.context.activeTaskId, "resumed");
+    await broadcastTaskListChange(
+      auth.context,
+      auth.context.activeTaskId,
+      "resumed",
+    );
     runningTasks.add(auth.context.activeTaskId);
     await watchTaskStream(auth.bot, message.actor, auth.context, auth.user);
     const traceId = generateTraceId(auth.context.activeTaskId);
-    await broadcastTaskListChange(auth.context, auth.context.activeTaskId, "prompt_sent", {
-      prompt: {
-        content: preparedMessage.content,
-        attachments:
-          preparedMessage.zcodeAttachments.length > 0
-            ? preparedMessage.zcodeAttachments
-            : undefined,
-        messageId: `bot-${traceId}`,
-        sentAt: Date.now(),
+    await broadcastTaskListChange(
+      auth.context,
+      auth.context.activeTaskId,
+      "prompt_sent",
+      {
+        prompt: {
+          content: preparedMessage.content,
+          attachments:
+            preparedMessage.zcodeAttachments.length > 0
+              ? preparedMessage.zcodeAttachments
+              : undefined,
+          messageId: `bot-${traceId}`,
+          sentAt: Date.now(),
+        },
       },
-    });
+    );
     sendPromptInBackground(
       auth.bot,
       message.actor,
@@ -7897,22 +9026,24 @@ export function createBotsService(
     return [];
   }
 
-  async function handleTaskList(message: BotInboundMessage): Promise<BotOutboundMessage[]> {
+  async function handleTaskList(
+    message: BotInboundMessage,
+  ): Promise<BotOutboundMessage[]> {
     const auth = await withAuthorizedContext(message, "task");
     if (!auth.ok) {
       return auth.reply;
     }
-    if (message.actor.threadId) return createStatusReply(message.actor, auth.context, auth.locale);
+    if (message.actor.threadId)
+      return createStatusReply(message.actor, auth.context, auth.locale);
     const blockReason = await getContextTaskBlockReason(auth.context);
     if (blockReason) {
       // Bugfix: 运行中展示 /task 列表会让用户继续点选其它 task，
       // 即使后续切换被拒绝，也会留下误导性的 pending selection。
       return [createOutbound(message.actor, msg(auth.locale, blockReason))];
     }
-    const taskEntries = (await listContextTaskSelectionEntries(auth.context, auth.user)).slice(
-      0,
-      10,
-    );
+    const taskEntries = (
+      await listContextTaskSelectionEntries(auth.context, auth.user)
+    ).slice(0, 10);
     const tasks = taskEntries.map((entry) => entry.task);
     const activeTask = auth.context.activeTaskId
       ? tasks.find((task) => task.taskId === auth.context.activeTaskId)
@@ -7920,7 +9051,9 @@ export function createBotsService(
     const selection: SelectionPrompt = {
       id: `task-${Date.now()}`,
       title: msg(auth.locale, "taskSelectTitle", {
-        task: activeTask ? `${activeTask.title} (${activeTask.taskId})` : "draft",
+        task: activeTask
+          ? `${activeTask.title} (${activeTask.taskId})`
+          : "draft",
       }),
       currentId: auth.context.activeTaskId ?? undefined,
       action: "task.set",
@@ -7965,13 +9098,20 @@ export function createBotsService(
   async function getContextTaskBlockReason(
     context: BotContextState,
   ): Promise<
-    "taskRunning" | "groupTaskQueued" | "groupTaskInteraction" | "groupTaskDisconnected" | null
+    | "taskRunning"
+    | "groupTaskQueued"
+    | "groupTaskInteraction"
+    | "groupTaskDisconnected"
+    | null
   > {
     if (!context.activeTaskId) {
       return null;
     }
     if (context.group) {
-      if (context.workspaceIdentity && !(await isRemoteWorkspaceConnected(context)))
+      if (
+        context.workspaceIdentity &&
+        !(await isRemoteWorkspaceConnected(context))
+      )
         return "groupTaskDisconnected";
       const taskService = await resolveZCodeTaskServiceForContext(context);
       if (!taskService.getBotGroupTaskBlockReason)
@@ -7992,7 +9132,10 @@ export function createBotsService(
             ? "groupTaskInteraction"
             : "taskRunning";
       // 停止或在 Desktop 处理审批后，Bot 卡片缓存可能仍残留；不能让缓存否决 CLI 空闲状态。
-      if (context.pendingElicitation || context.pendingPermissionOptions?.length) {
+      if (
+        context.pendingElicitation ||
+        context.pendingPermissionOptions?.length
+      ) {
         if (context.pendingElicitation)
           clearPendingElicitationSelection(context.pendingElicitation);
         context.pendingElicitation = undefined;
@@ -8008,7 +9151,10 @@ export function createBotsService(
     if (!runningTasks.has(context.activeTaskId)) {
       return null;
     }
-    if (context.workspaceIdentity && !(await isRemoteWorkspaceConnected(context))) {
+    if (
+      context.workspaceIdentity &&
+      !(await isRemoteWorkspaceConnected(context))
+    ) {
       // Bugfix: /workspace 这类本地命令只是在切换上下文，不能为了确认旧任务状态而创建远端 runtime。
       // 断连时把内存 running 状态视为不可确认，交给显式 /reconnect 后再恢复查询。
       return null;
@@ -8050,22 +9196,34 @@ export function createBotsService(
     );
   }
 
-  async function watchAutomationRun(params: BotAutomationRunWatchParams): Promise<void> {
+  async function watchAutomationRun(
+    params: BotAutomationRunWatchParams,
+  ): Promise<void> {
     const config = await repo.readConfig();
     const bot = findBot(config, params.target.botId);
     if (!bot) {
-      warnAutomationDeliveryOnce({ target: params.target, reason: "bot_missing" });
+      warnAutomationDeliveryOnce({
+        target: params.target,
+        reason: "bot_missing",
+      });
       return;
     }
     if (!bot.enabled) {
-      warnAutomationDeliveryOnce({ target: params.target, reason: "bot_disabled" });
+      warnAutomationDeliveryOnce({
+        target: params.target,
+        reason: "bot_disabled",
+      });
       return;
     }
     if (bot.provider !== params.target.provider) {
-      warnAutomationDeliveryOnce({ target: params.target, reason: "provider_mismatch" });
+      warnAutomationDeliveryOnce({
+        target: params.target,
+        reason: "provider_mismatch",
+      });
       return;
     }
-    if (params.target.chatType === "private") await reconcilePrivateSynchronization(bot.id);
+    if (params.target.chatType === "private")
+      await reconcilePrivateSynchronization(bot.id);
     let conversationThreadId: string | null | undefined;
     if (params.target.chatType === "group") {
       const states = (await repo.readState()).bots;
@@ -8078,8 +9236,14 @@ export function createBotsService(
             threadId: params.target.threadId,
           })
         ];
-      if (!state?.group?.enabled || state.group.ownerId !== bot.providerUserId) {
-        warnAutomationDeliveryOnce({ target: params.target, reason: "group_not_authorized" });
+      if (
+        !state?.group?.enabled ||
+        state.group.ownerId !== bot.providerUserId
+      ) {
+        warnAutomationDeliveryOnce({
+          target: params.target,
+          reason: "group_not_authorized",
+        });
         return;
       }
       // 旧 alias 不能继续回退到默认任务；话题投递必须存在独立的授权会话。
@@ -8093,12 +9257,16 @@ export function createBotsService(
       threadId: params.target.threadId,
       conversationThreadId,
       rootMessageId: params.target.rootMessageId,
-      ...(params.target.chatType === "group" ? { chatId: params.target.providerUserId } : {}),
+      ...(params.target.chatType === "group"
+        ? { chatId: params.target.providerUserId }
+        : {}),
     };
     const context: BotContextState = {
       botId: bot.id,
       workspacePath: params.workspacePath,
-      ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
+      ...(params.workspaceIdentity
+        ? { workspaceIdentity: params.workspaceIdentity }
+        : {}),
       mode: "task",
       activeTaskId: params.taskId,
       updatedAt: Date.now(),
@@ -8119,7 +9287,9 @@ export function createBotsService(
 
   service = {
     async syncAppRuntimePreferences(preferences) {
-      await deps.remoteWorkspaceService?.syncAppRuntimePreferences?.(preferences);
+      await deps.remoteWorkspaceService?.syncAppRuntimePreferences?.(
+        preferences,
+      );
     },
     async getStatus() {
       const config = await repo.readConfig();
@@ -8157,11 +9327,21 @@ export function createBotsService(
     pollWeixinRegistration(params) {
       return pollWeixinQrRegistration(params);
     },
+    beginQQRegistration() {
+      return beginQQRegistrationFlow();
+    },
+    pollQQRegistration(params) {
+      return pollQQRegistrationFlow(params);
+    },
+    cancelQQRegistration() {
+      cancelQQRegistrationFlow();
+    },
     async saveConfig(config) {
       const savedConfig = await writeBotConfig(normalizeConfigBots(config));
       telegramRuntime.scheduleRefresh(savedConfig);
       weixinRuntime.scheduleRefresh(savedConfig);
       feishuRuntime.scheduleRefresh(savedConfig);
+      qqRuntime.scheduleRefresh(savedConfig);
       return savedConfig;
     },
     async listBots() {
@@ -8173,10 +9353,15 @@ export function createBotsService(
         ...params.bot,
         id: params.bot.id.trim(),
         name: params.bot.name.trim(),
-        allowedWorkspaces: normalizeAllowedWorkspaces(params.bot.allowedWorkspaces),
+        allowedWorkspaces: normalizeAllowedWorkspaces(
+          params.bot.allowedWorkspaces,
+        ),
         allowedCommands: normalizeBotCommandPolicy(params.bot.allowedCommands),
         currentOptions: normalizeBotCurrentOptions(params.bot.currentOptions),
-        replyMode: normalizeBotReplyGranularity(params.bot.provider, params.bot.replyMode),
+        replyMode: normalizeBotReplyGranularity(
+          params.bot.provider,
+          params.bot.replyMode,
+        ),
       };
       if (params.credentialValue?.trim()) {
         const key = buildBotCredentialKey(bot.id);
@@ -8185,12 +9370,17 @@ export function createBotsService(
       }
       if (params.webhookSecretValue?.trim()) {
         const key = buildBotWebhookSecretKey(bot.id);
-        await deps.credentialService.save(key, params.webhookSecretValue.trim());
+        await deps.credentialService.save(
+          key,
+          params.webhookSecretValue.trim(),
+        );
         bot = { ...bot, webhookSecretRef: key };
       }
       if (params.credentialValue?.trim() || !bot.name.trim()) {
         const adapter = providers[bot.provider];
-        const resolveRetryDelaysMs = isFeishuBotProvider(bot.provider) ? [0, 800, 1_800] : [0];
+        const resolveRetryDelaysMs = isFeishuBotProvider(bot.provider)
+          ? [0, 800, 1_800]
+          : [0];
         let resolvedName: string | null | undefined = null;
         let lastResolveNameError: unknown;
         for (const retryDelayMs of resolveRetryDelaysMs) {
@@ -8224,6 +9414,7 @@ export function createBotsService(
       telegramRuntime.scheduleRefresh(savedConfig);
       weixinRuntime.scheduleRefresh(savedConfig);
       feishuRuntime.scheduleRefresh(savedConfig);
+      qqRuntime.scheduleRefresh(savedConfig);
       return bot;
     },
     async removeBotSecret(botId: string) {
@@ -8249,7 +9440,9 @@ export function createBotsService(
         webhookSecretRef: undefined,
         providerUserId: undefined,
         displayName: undefined,
-        feishuAppId: isFeishuBotProvider(bot.provider) ? undefined : bot.feishuAppId,
+        feishuAppId: isFeishuBotProvider(bot.provider)
+          ? undefined
+          : bot.feishuAppId,
       });
       const savedConfig = await writeBotConfig({
         ...config,
@@ -8259,6 +9452,7 @@ export function createBotsService(
       telegramRuntime.scheduleRefresh(savedConfig);
       weixinRuntime.scheduleRefresh(savedConfig);
       feishuRuntime.scheduleRefresh(savedConfig);
+      qqRuntime.scheduleRefresh(savedConfig);
       if (bot.credentialRef) {
         await deps.credentialService.delete(bot.credentialRef);
       }
@@ -8286,6 +9480,7 @@ export function createBotsService(
       telegramRuntime.scheduleRefresh();
       weixinRuntime.scheduleRefresh();
       await repo.updateContext(botId, () => undefined);
+      qqRuntime.scheduleRefresh();
       if (bot?.credentialRef) {
         await deps.credentialService.delete(bot.credentialRef);
       }
@@ -8309,7 +9504,9 @@ export function createBotsService(
       }
       return { ...(await adapter.test(bot)), provider: bot.provider };
     },
-    async createBindCode(params: BotCreateBindCodeParams): Promise<BotBindCodeResult> {
+    async createBindCode(
+      params: BotCreateBindCodeParams,
+    ): Promise<BotBindCodeResult> {
       const config = await repo.readConfig();
       const botId = params.botId ?? params.botId;
       if (!botId) {
@@ -8348,8 +9545,10 @@ export function createBotsService(
       };
       const before = await authorize();
       const names =
-        (await providers[before.bot.provider]?.getGroupMemberNames?.(before.bot, params.chatId)) ??
-        {};
+        (await providers[before.bot.provider]?.getGroupMemberNames?.(
+          before.bot,
+          params.chatId,
+        )) ?? {};
       const after = await authorize();
       // 查询期间停用、重新授权或切换凭据后，旧请求不得将姓名带回新会话。
       if (
@@ -8399,7 +9598,10 @@ export function createBotsService(
           return result;
         },
       });
-      if (result.attachment.kind !== "file" && result.attachment.kind !== "image")
+      if (
+        result.attachment.kind !== "file" &&
+        result.attachment.kind !== "image"
+      )
         throw new Error("Topic resource format unsupported");
       return {
         kind: result.attachment.kind,
@@ -8420,7 +9622,8 @@ export function createBotsService(
             threadId: params.threadId,
           })
         ];
-      const workspace = context?.group?.taskWorkspaces?.[params.taskId] ?? context;
+      const workspace =
+        context?.group?.taskWorkspaces?.[params.taskId] ?? context;
       if (
         !context?.group?.taskIds.includes(params.taskId) ||
         !workspace ||
@@ -8432,13 +9635,25 @@ export function createBotsService(
       if (!bot || context.group.ownerId !== bot.providerUserId)
         throw new Error("Topic owner scope mismatch");
       const batches = Object.values(context.group.inputs ?? {})
-        .filter((input) => input.taskId === params.taskId && input.admission === "accepted")
-        .flatMap((input) => (input.source.topicContext ? [input.source.topicContext] : []));
+        .filter(
+          (input) =>
+            input.taskId === params.taskId && input.admission === "accepted",
+        )
+        .flatMap((input) =>
+          input.source.topicContext ? [input.source.topicContext] : [],
+        );
       const parent =
         state.bots[
-          getBotConversationKey({ botId: params.botId, chatId: params.chatId, chatType: "group" })
+          getBotConversationKey({
+            botId: params.botId,
+            chatId: params.chatId,
+            chatType: "group",
+          })
         ];
-      const service = await resolveZCodeTaskServiceForContext({ ...context, ...workspace });
+      const service = await resolveZCodeTaskServiceForContext({
+        ...context,
+        ...workspace,
+      });
       const summaries =
         (await service.readBotTopicSummaries?.({
           taskId: params.taskId,
@@ -8446,8 +9661,9 @@ export function createBotsService(
           workspaceIdentity: params.workspaceIdentity,
         })) ?? [];
       return {
-        messageCount: new Set(batches.flatMap((batch) => batch.messages.map((record) => record.id)))
-          .size,
+        messageCount: new Set(
+          batches.flatMap((batch) => batch.messages.map((record) => record.id)),
+        ).size,
         hasGap: batches.some((batch) => batch.hasGap),
         historyEnabled: parent?.group?.historyEnabled !== false,
         summaries,
@@ -8457,9 +9673,14 @@ export function createBotsService(
       const key = getBotConversationKey({ ...params, chatType: "group" });
       const context = (await repo.readState()).bots[key];
       const bot = findBot(await repo.readConfig(), params.botId);
-      if (!bot?.enabled || !context?.group?.enabled || context.group.ownerId !== bot.providerUserId)
+      if (
+        !bot?.enabled ||
+        !context?.group?.enabled ||
+        context.group.ownerId !== bot.providerUserId
+      )
         throw new Error("Topic preparation target is no longer authorized");
-      if (context.activeTaskId !== params.taskId) throw new Error("Topic preparation task changed");
+      if (context.activeTaskId !== params.taskId)
+        throw new Error("Topic preparation task changed");
       if (
         getWorkspaceKey(context.workspacePath, context.workspaceIdentity) !==
         getWorkspaceKey(params.workspacePath, params.workspaceIdentity)
@@ -8472,10 +9693,14 @@ export function createBotsService(
         Object.values(latest?.group?.inputs ?? {}).some(
           (input) =>
             input.source.messageId === params.messageId ||
-            input.source.messages?.some((original) => original.messageId === params.messageId),
+            input.source.messages?.some(
+              (original) => original.messageId === params.messageId,
+            ),
         )
       )
-        throw new Error("Topic input was already submitted; preparation cannot be retried");
+        throw new Error(
+          "Topic input was already submitted; preparation cannot be retried",
+        );
       const message = topicPreparation.retry(key, params.messageId);
       if (!message) throw new Error("Topic preparation is no longer retryable");
       topicPreparation.update(key, [params.messageId], "preparing");
@@ -8497,27 +9722,31 @@ export function createBotsService(
       });
     },
     async getBotStates() {
-      return Object.entries((await repo.readState()).bots).map(([key, context]) => {
-        if (context.group)
-          context = {
+      return Object.entries((await repo.readState()).bots).map(
+        ([key, context]) => {
+          if (context.group)
+            context = {
+              ...context,
+              group: {
+                ...context.group,
+                preparation: topicPreparation.snapshot(key),
+              },
+            };
+          const sender = groupDeliverySenders.get(key);
+          if (!context.group || !sender) return context;
+          return {
             ...context,
-            group: { ...context.group, preparation: topicPreparation.snapshot(key) },
+            group: {
+              ...context.group,
+              deliveries: Object.fromEntries(
+                Object.entries(context.group.deliveries ?? {}).map(
+                  ([id, result]) => [id, sender.project(result)],
+                ),
+              ),
+            },
           };
-        const sender = groupDeliverySenders.get(key);
-        if (!context.group || !sender) return context;
-        return {
-          ...context,
-          group: {
-            ...context.group,
-            deliveries: Object.fromEntries(
-              Object.entries(context.group.deliveries ?? {}).map(([id, result]) => [
-                id,
-                sender.project(result),
-              ]),
-            ),
-          },
-        };
-      });
+        },
+      );
     },
     async reconcileGroupResult(params: {
       botId: string;
@@ -8547,7 +9776,9 @@ export function createBotsService(
           result.status !== "unknown" ||
           groupDeliverySenders.get(key)?.isInFlight(params.deliveryId)
         ) {
-          throw new Error("Saved group result cannot be reconciled in the current state");
+          throw new Error(
+            "Saved group result cannot be reconciled in the current state",
+          );
         }
         reconciled = {
           ...result,
@@ -8555,7 +9786,10 @@ export function createBotsService(
           lastError: undefined,
           updatedAt: Date.now(),
         };
-        context.group.deliveries = { ...context.group.deliveries, [result.id]: reconciled };
+        context.group.deliveries = {
+          ...context.group.deliveries,
+          [result.id]: reconciled,
+        };
         await repo.writeState(state);
       });
       await deps.broadcastService
@@ -8573,19 +9807,34 @@ export function createBotsService(
       deliveryId: string;
     }) {
       const bot = findBot(await repo.readConfig(), params.botId);
-      if (!bot || !isFeishuBotProvider(bot.provider)) throw new Error("Group bot unavailable");
+      if (!bot || !isFeishuBotProvider(bot.provider))
+        throw new Error("Group bot unavailable");
       const key = getBotConversationKey({
         botId: params.botId,
         chatType: "group",
         chatId: params.chatId,
         threadId: params.threadId,
       });
-      const result = (await repo.readState()).bots[key]?.group?.deliveries?.[params.deliveryId];
+      const result = (await repo.readState()).bots[key]?.group?.deliveries?.[
+        params.deliveryId
+      ];
       if (!result) throw new Error("Saved group result unavailable");
-      await getGroupDeliverySender(bot, params.chatId, params.threadId)(result, true);
-      return (await repo.readState()).bots[key]?.group?.deliveries?.[params.deliveryId] ?? result;
+      await getGroupDeliverySender(
+        bot,
+        params.chatId,
+        params.threadId,
+      )(result, true);
+      return (
+        (await repo.readState()).bots[key]?.group?.deliveries?.[
+          params.deliveryId
+        ] ?? result
+      );
     },
-    async setGroupEnabled(params: { botId: string; chatId: string; enabled: boolean }) {
+    async setGroupEnabled(params: {
+      botId: string;
+      chatId: string;
+      enabled: boolean;
+    }) {
       const bot = findBot(await repo.readConfig(), params.botId);
       if (!bot?.providerUserId) throw new Error("Bot owner unavailable");
       await handleGroupActivation(
@@ -8608,7 +9857,9 @@ export function createBotsService(
       const bot = findBot(await repo.readConfig(), botId);
       const context = (await repo.readState()).bots[botId];
       const recipient =
-        bot?.provider === "weixin" ? context?.privateRecipientId : bot?.providerUserId;
+        bot?.provider === "weixin"
+          ? context?.privateRecipientId
+          : bot?.providerUserId;
       if (
         !failed ||
         failed.id !== deliveryId ||
@@ -8626,7 +9877,11 @@ export function createBotsService(
           failedPrivateDeliveries.delete(botId);
           const runtime = runtimeByBotId.get(botId);
           if (runtime)
-            setRuntimeStatus({ ...runtime, deliveryRetryId: undefined, deliveryError: undefined });
+            setRuntimeStatus({
+              ...runtime,
+              deliveryRetryId: undefined,
+              deliveryError: undefined,
+            });
         }
       } finally {
         failed.sending = false;
@@ -8648,18 +9903,27 @@ export function createBotsService(
         )
           return [];
         const topic = (await repo.readState()).bots[
-          getBotConversationKey({ ...message.actor, conversationThreadId: undefined })
+          getBotConversationKey({
+            ...message.actor,
+            conversationThreadId: undefined,
+          })
         ];
         if (!topic?.group?.enabled) return [];
         if (message.actor.threadId) {
           if (topic.group.topicActive !== true) return [];
-        } else if (message.mentionedBot !== true || topic.group.chatMode === "topic") {
+        } else if (
+          message.mentionedBot !== true ||
+          topic.group.chatMode === "topic"
+        ) {
           return [];
         }
       }
       message = {
         ...message,
-        actor: { ...message.actor, mentionedBot: message.mentionedBot === true },
+        actor: {
+          ...message.actor,
+          mentionedBot: message.mentionedBot === true,
+        },
       };
       if (
         message.actor.chatType === "group" &&
@@ -8667,7 +9931,10 @@ export function createBotsService(
         !message.groupCardAction
       ) {
         const topic = (await repo.readState()).bots[
-          getBotConversationKey({ ...message.actor, conversationThreadId: undefined })
+          getBotConversationKey({
+            ...message.actor,
+            conversationThreadId: undefined,
+          })
         ];
         if (
           !message.actor.threadId ||
@@ -8680,19 +9947,29 @@ export function createBotsService(
       }
 
       if (message.actor.chatType === "group" && message.actor.threadId) {
-        const actor: BotActor = { ...message.actor, conversationThreadId: undefined };
+        const actor: BotActor = {
+          ...message.actor,
+          conversationThreadId: undefined,
+        };
         const state = await repo.readState();
         if (!state.bots[getBotConversationKey(actor)]) {
           // alias 仅用于一次性安全迁移检查，不能再把话题路由到默认任务。
           for (const candidate of Object.values(state.bots)) {
             const group = candidate.group;
-            if (!group || candidate.botId !== actor.botId || group.chatId !== actor.chatId)
+            if (
+              !group ||
+              candidate.botId !== actor.botId ||
+              group.chatId !== actor.chatId
+            )
               continue;
             const alias = group.topicAliases?.[actor.threadId!];
             if (!alias) continue;
             // 默认会话可能已切换工作区；迁移检查必须使用旧任务自己的完整工作区身份。
             const workspace = group.taskWorkspaces?.[alias.taskId] ?? candidate;
-            const service = await resolveZCodeTaskServiceForContext({ ...candidate, ...workspace });
+            const service = await resolveZCodeTaskServiceForContext({
+              ...candidate,
+              ...workspace,
+            });
             if (
               !service.getBotGroupTaskBlockReason ||
               (await service.getBotGroupTaskBlockReason({
@@ -8701,7 +9978,12 @@ export function createBotsService(
                 workspaceIdentity: workspace.workspaceIdentity,
               }))
             ) {
-              return [createOutbound(actor, "原话题任务仍在执行，请结束后重新接入话题。")];
+              return [
+                createOutbound(
+                  actor,
+                  "原话题任务仍在执行，请结束后重新接入话题。",
+                ),
+              ];
             }
           }
         }
@@ -8742,7 +10024,8 @@ export function createBotsService(
           await serializeStateWrite(async () => {
             const state = await repo.readState();
             const current = state.bots[getBotConversationKey(message.actor)];
-            if (!current?.group?.enabled || current.group.topicActive !== true) return;
+            if (!current?.group?.enabled || current.group.topicActive !== true)
+              return;
             const accepted = Object.values(current.group.inputs ?? {}).filter(
               (input) => input.admission === "accepted",
             );
@@ -8777,25 +10060,43 @@ export function createBotsService(
       const processInbound = async () => {
         await capturePrivateContextToken(message);
         if (message.elicitationResponse) {
-          return handleStructuredElicitationResponse(message, message.elicitationResponse);
+          return handleStructuredElicitationResponse(
+            message,
+            message.elicitationResponse,
+          );
         }
-        const parsedCommand = parseBotCommand(message.commandText ?? message.text);
+        const parsedCommand = parseBotCommand(
+          message.commandText ?? message.text,
+        );
         // 群主聊天也会进入此分发器；仅改外层 commandType 不能阻止机器人触发控制/数字选择。
         const command =
           message.senderType === "app"
             ? ({ type: "message", text: message.text } as const)
             : parsedCommand.type === "message"
-              ? (resolvePendingSelectionCommand(message.actor, parsedCommand.text) ?? parsedCommand)
+              ? (resolvePendingSelectionCommand(
+                  message.actor,
+                  parsedCommand.text,
+                ) ?? parsedCommand)
               : parsedCommand.type === "selection.cancel" &&
                   message.actor.provider !== "weixin" &&
                   (message.commandText ?? message.text).trim() === "0"
                 ? (clearPendingSelection(message.actor),
                   { type: "message", text: message.text } as const)
                 : parsedCommand;
-        const weixinActivationReply = await handleWeixinFirstActivation(message, command);
+        const weixinActivationReply = await handleWeixinFirstActivation(
+          message,
+          command,
+        );
         if (weixinActivationReply) {
           await capturePrivateContextToken(message);
           return weixinActivationReply;
+        }
+        const qqActivationReply = await handleQQFirstActivation(
+          message,
+          command,
+        );
+        if (qqActivationReply) {
+          return qqActivationReply;
         }
         switch (command.type) {
           case "queue.cancel":
@@ -8830,7 +10131,9 @@ export function createBotsService(
               ];
             const blockReason = await getContextTaskBlockReason(auth.context);
             if (blockReason) {
-              return [createOutbound(message.actor, msg(auth.locale, blockReason))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, blockReason)),
+              ];
             }
             const context = await writeDraftContext(
               auth.context,
@@ -8844,7 +10147,9 @@ export function createBotsService(
             const blockReason = await getContextTaskBlockReason(auth.context);
             if (blockReason) {
               // Bugfix: task 运行中不展示 workspace 选择，避免用户误以为可以切换上下文。
-              return [createOutbound(message.actor, msg(auth.locale, blockReason))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, blockReason)),
+              ];
             }
             const synced = await normalizeBotWorkspaceConfig(
               auth.config,
@@ -8862,15 +10167,27 @@ export function createBotsService(
               label: formatWorkspaceOptionLabel(workspace, auth.locale),
             }));
             if (options.length === 0) {
-              pendingWorkspaceSelectionsByContext.delete(getActorContextKey(message.actor));
-              return [createOutbound(message.actor, msg(auth.locale, "workspaceMissing"))];
+              pendingWorkspaceSelectionsByContext.delete(
+                getActorContextKey(message.actor),
+              );
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "workspaceMissing"),
+                ),
+              ];
             }
             // Bugfix: 远端 workspace 选项必须在展示时保留 workspaceIdentity。
             // Telegram/飞书按钮会把点击变成 /workspace 序号，切换阶段若重新从 settings 解析，
             // current remote context 可能不在候选列表里，最终表现成 /workspace 不支持远端。
             pendingWorkspaceSelectionsByContext.set(
               getActorContextKey(message.actor),
-              new Map(visibleWorkspaces.map((workspace) => [workspace.id, { workspace }])),
+              new Map(
+                visibleWorkspaces.map((workspace) => [
+                  workspace.id,
+                  { workspace },
+                ]),
+              ),
             );
             return createSelectionReply(
               message.actor,
@@ -8878,8 +10195,9 @@ export function createBotsService(
                 id: `workspace-${Date.now()}`,
                 title: msg(auth.locale, "workspaceSelectTitle", {
                   workspace:
-                    visibleWorkspaces.find((workspace) => workspace.id === auth.context.workspaceId)
-                      ?.label ?? auth.context.workspacePath,
+                    visibleWorkspaces.find(
+                      (workspace) => workspace.id === auth.context.workspaceId,
+                    )?.label ?? auth.context.workspacePath,
                 }),
                 currentId: auth.context.workspaceId,
                 action: "workspace.set",
@@ -8893,7 +10211,9 @@ export function createBotsService(
             if (!auth.ok) return auth.reply;
             const blockReason = await getContextTaskBlockReason(auth.context);
             if (blockReason) {
-              return [createOutbound(message.actor, msg(auth.locale, blockReason))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, blockReason)),
+              ];
             }
             const synced = await normalizeBotWorkspaceConfig(
               auth.config,
@@ -8901,7 +10221,10 @@ export function createBotsService(
               createCurrentWorkspaceRef(auth.context),
             );
             const workspace =
-              resolvePendingWorkspaceSelectionEntry(message.actor, command.value)?.workspace ??
+              resolvePendingWorkspaceSelectionEntry(
+                message.actor,
+                command.value,
+              )?.workspace ??
               resolveWorkspaceByValue(
                 synced.workspaces,
                 command.value,
@@ -8916,7 +10239,9 @@ export function createBotsService(
               context,
               await buildInitializedDraftOptions(context),
             );
-            pendingWorkspaceSelectionsByContext.delete(getActorContextKey(message.actor));
+            pendingWorkspaceSelectionsByContext.delete(
+              getActorContextKey(message.actor),
+            );
             return createStatusReply(message.actor, draftContext, auth.locale);
           }
           case "model.list": {
@@ -8925,24 +10250,37 @@ export function createBotsService(
             const blockReason = await getContextTaskBlockReason(auth.context);
             if (blockReason) {
               // Bugfix: task 运行中不展示模型选择，避免产生运行中不可用的 pending selection。
-              return [createOutbound(message.actor, msg(auth.locale, blockReason))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, blockReason)),
+              ];
             }
             if (auth.context.mode === "draft" || !auth.context.activeTaskId) {
-              const draftOptions = await resolveDraftOptionsForDisplay(auth.context);
+              const draftOptions = await resolveDraftOptionsForDisplay(
+                auth.context,
+              );
               const providers = await listModelProviderOptionsForActiveTask(
                 {
-                  model: formatBotModelSelectionValue(draftOptions.modelSelection),
+                  model: formatBotModelSelectionValue(
+                    draftOptions.modelSelection,
+                  ),
                   workspacePath: auth.context.workspacePath,
                   workspaceIdentity: auth.context.workspaceIdentity,
                 },
                 draftOptions.provider,
               );
               if (providers.length === 0) {
-                return [createOutbound(message.actor, msg(auth.locale, "modelProviderMissing"))];
+                return [
+                  createOutbound(
+                    message.actor,
+                    msg(auth.locale, "modelProviderMissing"),
+                  ),
+                ];
               }
               const currentProviderId = await readCurrentModelProviderId(
                 {
-                  model: formatBotModelSelectionValue(draftOptions.modelSelection),
+                  model: formatBotModelSelectionValue(
+                    draftOptions.modelSelection,
+                  ),
                   workspacePath: auth.context.workspacePath,
                   workspaceIdentity: auth.context.workspaceIdentity,
                 },
@@ -8968,18 +10306,33 @@ export function createBotsService(
             }
             const active = await requireActiveTask(message, auth);
             if (!active.ok) return active.reply;
-            const activeProvider = normalizeAgentProviderToZCodeAgent(active.task.provider);
+            const activeProvider = normalizeAgentProviderToZCodeAgent(
+              active.task.provider,
+            );
             if (!activeProvider) {
-              return [createOutbound(message.actor, msg(auth.locale, "modelProviderMissing"))];
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "modelProviderMissing"),
+                ),
+              ];
             }
             const providers = await listModelProviderOptionsForActiveTask(
               active.task,
               activeProvider,
             );
             if (providers.length === 0) {
-              return [createOutbound(message.actor, msg(auth.locale, "modelProviderMissing"))];
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "modelProviderMissing"),
+                ),
+              ];
             }
-            const currentValue = readCurrentActiveTaskModel(active.task, active.configOptions);
+            const currentValue = readCurrentActiveTaskModel(
+              active.task,
+              active.configOptions,
+            );
             const currentProviderId = await readCurrentModelProviderId(
               active.task,
               active.configOptions,
@@ -8990,7 +10343,10 @@ export function createBotsService(
               {
                 id: `model-${Date.now()}`,
                 title: msg(auth.locale, "modelProviderSelectTitle", {
-                  model: await formatStatusModelLabel(currentValue, active.task),
+                  model: await formatStatusModelLabel(
+                    currentValue,
+                    active.task,
+                  ),
                 }),
                 currentId: currentProviderId,
                 action: "model.provider.set",
@@ -9004,12 +10360,18 @@ export function createBotsService(
             if (!auth.ok) return auth.reply;
             const blockReason = await getContextTaskBlockReason(auth.context);
             if (blockReason) {
-              return [createOutbound(message.actor, msg(auth.locale, blockReason))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, blockReason)),
+              ];
             }
             if (auth.context.mode === "draft" || !auth.context.activeTaskId) {
-              const draftOptions = await resolveDraftOptionsForDisplay(auth.context);
+              const draftOptions = await resolveDraftOptionsForDisplay(
+                auth.context,
+              );
               const draftTask = {
-                model: formatBotModelSelectionValue(draftOptions.modelSelection),
+                model: formatBotModelSelectionValue(
+                  draftOptions.modelSelection,
+                ),
                 workspacePath: auth.context.workspacePath,
                 workspaceIdentity: auth.context.workspaceIdentity,
               };
@@ -9018,11 +10380,19 @@ export function createBotsService(
                 draftOptions.provider,
               );
               const provider =
-                resolvePendingSelectionOption(message.actor, "model.provider.set", command.value) ??
-                resolveOptionByValue(providers, command.value);
+                resolvePendingSelectionOption(
+                  message.actor,
+                  "model.provider.set",
+                  command.value,
+                ) ?? resolveOptionByValue(providers, command.value);
               const providerId = provider?.id;
               if (!providerId) {
-                return [createOutbound(message.actor, msg(auth.locale, "modelProviderMissing"))];
+                return [
+                  createOutbound(
+                    message.actor,
+                    msg(auth.locale, "modelProviderMissing"),
+                  ),
+                ];
               }
               const providerModels = readModelProviderSelectionModels(provider);
               const options =
@@ -9034,18 +10404,27 @@ export function createBotsService(
                       providerId,
                     );
               if (options.length === 0) {
-                return [createOutbound(message.actor, msg(auth.locale, "modelMissing"))];
+                return [
+                  createOutbound(
+                    message.actor,
+                    msg(auth.locale, "modelMissing"),
+                  ),
+                ];
               }
               return createSelectionReply(
                 message.actor,
                 {
                   id: `model-${Date.now()}`,
                   title: msg(auth.locale, "modelModelSelectTitle", {
-                    model: formatBotModelSelectionValue(draftOptions.modelSelection) ?? "-",
+                    model:
+                      formatBotModelSelectionValue(
+                        draftOptions.modelSelection,
+                      ) ?? "-",
                   }),
                   currentId: options.some(
                     (option) =>
-                      option.id === formatBotModelSelectionValue(draftOptions.modelSelection),
+                      option.id ===
+                      formatBotModelSelectionValue(draftOptions.modelSelection),
                   )
                     ? formatBotModelSelectionValue(draftOptions.modelSelection)
                     : undefined,
@@ -9057,20 +10436,35 @@ export function createBotsService(
             }
             const active = await requireActiveTask(message, auth);
             if (!active.ok) return active.reply;
-            const activeProvider = normalizeAgentProviderToZCodeAgent(active.task.provider);
+            const activeProvider = normalizeAgentProviderToZCodeAgent(
+              active.task.provider,
+            );
             if (!activeProvider) {
-              return [createOutbound(message.actor, msg(auth.locale, "modelProviderMissing"))];
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "modelProviderMissing"),
+                ),
+              ];
             }
             const providers = await listModelProviderOptionsForActiveTask(
               active.task,
               activeProvider,
             );
             const provider =
-              resolvePendingSelectionOption(message.actor, "model.provider.set", command.value) ??
-              resolveOptionByValue(providers, command.value);
+              resolvePendingSelectionOption(
+                message.actor,
+                "model.provider.set",
+                command.value,
+              ) ?? resolveOptionByValue(providers, command.value);
             const providerId = provider?.id;
             if (!providerId) {
-              return [createOutbound(message.actor, msg(auth.locale, "modelProviderMissing"))];
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "modelProviderMissing"),
+                ),
+              ];
             }
             const providerModels = readModelProviderSelectionModels(provider);
             const options =
@@ -9082,9 +10476,14 @@ export function createBotsService(
                     providerId,
                   );
             if (options.length === 0) {
-              return [createOutbound(message.actor, msg(auth.locale, "modelMissing"))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, "modelMissing")),
+              ];
             }
-            const currentValue = readCurrentActiveTaskModel(active.task, active.configOptions);
+            const currentValue = readCurrentActiveTaskModel(
+              active.task,
+              active.configOptions,
+            );
             return createSelectionReply(
               message.actor,
               {
@@ -9106,16 +10505,24 @@ export function createBotsService(
             if (!auth.ok) return auth.reply;
             const blockReason = await getContextTaskBlockReason(auth.context);
             if (blockReason) {
-              return [createOutbound(message.actor, msg(auth.locale, blockReason))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, blockReason)),
+              ];
             }
             if (auth.context.mode === "draft" || !auth.context.activeTaskId) {
               const draftOptions = await ensureDraftOptions(auth.context);
               const model =
-                resolvePendingSelectionOption(message.actor, "model.set", command.value) ??
+                resolvePendingSelectionOption(
+                  message.actor,
+                  "model.set",
+                  command.value,
+                ) ??
                 resolveOptionByValue(
                   await listAllModelOptionsForActiveTask(
                     {
-                      model: formatBotModelSelectionValue(draftOptions.modelSelection),
+                      model: formatBotModelSelectionValue(
+                        draftOptions.modelSelection,
+                      ),
                       workspacePath: auth.context.workspacePath,
                       workspaceIdentity: auth.context.workspaceIdentity,
                     },
@@ -9124,15 +10531,27 @@ export function createBotsService(
                   command.value,
                 );
               if (!model) {
-                return [createOutbound(message.actor, msg(auth.locale, "modelMissing"))];
+                return [
+                  createOutbound(
+                    message.actor,
+                    msg(auth.locale, "modelMissing"),
+                  ),
+                ];
               }
               const identity = parseBotModelOptionValue(model.id);
               const view = await readModelSelectionView(auth.context);
               const selection =
-                view && identity ? completeNewModelSelection(view, identity) : undefined;
+                view && identity
+                  ? completeNewModelSelection(view, identity)
+                  : undefined;
               // Bot 的主动选模也须取目标最高档；旧菜单失效/读取失败不能清掉已保存选择。
               if (!selection)
-                return [createOutbound(message.actor, msg(auth.locale, "modelMissing"))];
+                return [
+                  createOutbound(
+                    message.actor,
+                    msg(auth.locale, "modelMissing"),
+                  ),
+                ];
               const nextContext = await writeDraftOptions(auth.context, {
                 ...draftOptions,
                 // 模型身份切换必须构造全新的 Selection，不能把旧模型的显式 options 带过去。
@@ -9142,24 +10561,43 @@ export function createBotsService(
             }
             const active = await requireActiveTask(message, auth);
             if (!active.ok) return active.reply;
-            const activeProvider = normalizeAgentProviderToZCodeAgent(active.task.provider);
+            const activeProvider = normalizeAgentProviderToZCodeAgent(
+              active.task.provider,
+            );
             if (!activeProvider) {
-              return [createOutbound(message.actor, msg(auth.locale, "modelProviderMissing"))];
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "modelProviderMissing"),
+                ),
+              ];
             }
             const model =
-              resolvePendingSelectionOption(message.actor, "model.set", command.value) ??
+              resolvePendingSelectionOption(
+                message.actor,
+                "model.set",
+                command.value,
+              ) ??
               resolveOptionByValue(
-                await listAllModelOptionsForActiveTask(active.task, activeProvider),
+                await listAllModelOptionsForActiveTask(
+                  active.task,
+                  activeProvider,
+                ),
                 command.value,
               );
-            if (!model) return [createOutbound(message.actor, msg(auth.locale, "modelMissing"))];
+            if (!model)
+              return [
+                createOutbound(message.actor, msg(auth.locale, "modelMissing")),
+              ];
             const nextModel = model.id;
             const customModel = decodeCustomModelValue(nextModel);
             const targetModel = customModel
               ? resolveCustomModelRuntimeModelId(activeProvider, customModel)
               : nextModel;
             if (!targetModel) {
-              return [createOutbound(message.actor, msg(auth.locale, "modelMissing"))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, "modelMissing")),
+              ];
             }
             const targetIdentity = customModel?.modelName
               ? {
@@ -9174,9 +10612,13 @@ export function createBotsService(
               ? completeNewModelSelection(view, targetIdentity)
               : undefined;
             if (!targetModelSelection)
-              return [createOutbound(message.actor, msg(auth.locale, "modelMissing"))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, "modelMissing")),
+              ];
             const traceId = generateTraceId(active.taskId);
-            const zcodeTaskService = await resolveZCodeTaskServiceForContext(active.task);
+            const zcodeTaskService = await resolveZCodeTaskServiceForContext(
+              active.task,
+            );
             const configOptions = await zcodeTaskService.setModel({
               taskId: active.taskId,
               traceId,
@@ -9193,43 +10635,64 @@ export function createBotsService(
           }
           case "mode.list":
           case "thoughtLevel.list": {
-            const commandName = command.type === "mode.list" ? "mode" : "thoughtLevel";
+            const commandName =
+              command.type === "mode.list" ? "mode" : "thoughtLevel";
             const auth = await withAuthorizedContext(message, commandName);
             if (!auth.ok) return auth.reply;
             if (command.type === "mode.list" && !auth.context.group) {
               // Bot 硬锁 yolo：不提供模式选择。
-              return [createOutbound(message.actor, msg(auth.locale, "modeLocked"))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, "modeLocked")),
+              ];
             }
             const blockReason = await getContextTaskBlockReason(auth.context);
             if (blockReason) {
               // Bugfix: task 运行中不展示模式/思考级别选择，避免和正在执行的上下文配置混淆。
-              return [createOutbound(message.actor, msg(auth.locale, blockReason))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, blockReason)),
+              ];
             }
             if (auth.context.mode === "draft" || !auth.context.activeTaskId) {
               const draftOptions = await ensureDraftOptions(auth.context);
-              const optionSource = await listDraftConfigOptions(auth.context, draftOptions);
+              const optionSource = await listDraftConfigOptions(
+                auth.context,
+                draftOptions,
+              );
               const rawCurrentValue =
                 commandName === "mode"
                   ? draftOptions.mode
-                  : findSelectConfigOption(optionSource, commandName)?.currentValue;
+                  : findSelectConfigOption(optionSource, commandName)
+                      ?.currentValue;
               const currentValue =
-                typeof rawCurrentValue === "string" ? rawCurrentValue : undefined;
+                typeof rawCurrentValue === "string"
+                  ? rawCurrentValue
+                  : undefined;
               const currentLabel = readConfigSelectLabelForValue(
                 optionSource,
                 commandName,
                 currentValue,
                 { locale: auth.locale, provider: draftOptions.provider },
               );
-              const selectOption = findSelectConfigOption(optionSource, commandName);
-              const options = listConfigSelectOptions(optionSource, commandName, {
-                locale: auth.locale,
-                provider: draftOptions.provider,
-              });
+              const selectOption = findSelectConfigOption(
+                optionSource,
+                commandName,
+              );
+              const options = listConfigSelectOptions(
+                optionSource,
+                commandName,
+                {
+                  locale: auth.locale,
+                  provider: draftOptions.provider,
+                },
+              );
               if (options.length === 0) {
                 return [
                   createOutbound(
                     message.actor,
-                    msg(auth.locale, getConfigCommandMissingMessageId(commandName)),
+                    msg(
+                      auth.locale,
+                      getConfigCommandMissingMessageId(commandName),
+                    ),
                   ),
                 ];
               }
@@ -9264,27 +10727,51 @@ export function createBotsService(
             const currentValue =
               commandName === "mode"
                 ? readCurrentActiveTaskMode(active.task, active.configOptions)
-                : readConfigSelectCurrentValue(active.configOptions, commandName);
+                : readConfigSelectCurrentValue(
+                    active.configOptions,
+                    commandName,
+                  );
             const currentLabel =
               commandName === "mode"
-                ? readConfigSelectLabelForValue(optionSource, commandName, currentValue, {
-                    locale: auth.locale,
-                    provider: normalizeAgentProviderToZCodeAgent(active.task.provider),
-                  })
-                : readConfigSelectCurrentLabel(active.configOptions, commandName, {
-                    locale: auth.locale,
-                    provider: normalizeAgentProviderToZCodeAgent(active.task.provider),
-                  });
-            const selectOption = findSelectConfigOption(optionSource, commandName);
+                ? readConfigSelectLabelForValue(
+                    optionSource,
+                    commandName,
+                    currentValue,
+                    {
+                      locale: auth.locale,
+                      provider: normalizeAgentProviderToZCodeAgent(
+                        active.task.provider,
+                      ),
+                    },
+                  )
+                : readConfigSelectCurrentLabel(
+                    active.configOptions,
+                    commandName,
+                    {
+                      locale: auth.locale,
+                      provider: normalizeAgentProviderToZCodeAgent(
+                        active.task.provider,
+                      ),
+                    },
+                  );
+            const selectOption = findSelectConfigOption(
+              optionSource,
+              commandName,
+            );
             const options = listConfigSelectOptions(optionSource, commandName, {
               locale: auth.locale,
-              provider: normalizeAgentProviderToZCodeAgent(active.task.provider),
+              provider: normalizeAgentProviderToZCodeAgent(
+                active.task.provider,
+              ),
             });
             if (options.length === 0) {
               return [
                 createOutbound(
                   message.actor,
-                  msg(auth.locale, getConfigCommandMissingMessageId(commandName)),
+                  msg(
+                    auth.locale,
+                    getConfigCommandMissingMessageId(commandName),
+                  ),
                 ),
               ];
             }
@@ -9309,16 +10796,21 @@ export function createBotsService(
           }
           case "mode.set":
           case "thoughtLevel.set": {
-            const commandName = command.type === "mode.set" ? "mode" : "thoughtLevel";
+            const commandName =
+              command.type === "mode.set" ? "mode" : "thoughtLevel";
             const auth = await withAuthorizedContext(message, commandName);
             if (!auth.ok) return auth.reply;
             if (command.type === "mode.set" && !auth.context.group) {
               // Bot 硬锁 yolo：拒绝任何模式切换请求。
-              return [createOutbound(message.actor, msg(auth.locale, "modeLocked"))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, "modeLocked")),
+              ];
             }
             const blockReason = await getContextTaskBlockReason(auth.context);
             if (blockReason) {
-              return [createOutbound(message.actor, msg(auth.locale, blockReason))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, blockReason)),
+              ];
             }
             if (auth.context.mode === "draft" || !auth.context.activeTaskId) {
               const originalOptions = await ensureDraftOptions(auth.context);
@@ -9339,21 +10831,31 @@ export function createBotsService(
                     ? view?.effectiveSelection
                     : view?.preferredSelection) ?? undefined,
               };
-              const displayOptions = listConfigSelectOptions(optionSource, commandName, {
-                locale: auth.locale,
-                provider: draftOptions.provider,
-              });
+              const displayOptions = listConfigSelectOptions(
+                optionSource,
+                commandName,
+                {
+                  locale: auth.locale,
+                  provider: draftOptions.provider,
+                },
+              );
               const option =
                 resolvePendingSelectionOption(
                   message.actor,
                   `${commandName}.set` as SelectionPrompt["action"],
                   command.value,
                 ) ?? resolveOptionByValue(displayOptions, command.value);
-              if (option && !displayOptions.some((candidate) => candidate.id === option.id)) {
+              if (
+                option &&
+                !displayOptions.some((candidate) => candidate.id === option.id)
+              ) {
                 return [
                   createOutbound(
                     message.actor,
-                    msg(auth.locale, getConfigCommandMissingMessageId(commandName)),
+                    msg(
+                      auth.locale,
+                      getConfigCommandMissingMessageId(commandName),
+                    ),
                   ),
                 ];
               }
@@ -9361,7 +10863,10 @@ export function createBotsService(
                 return [
                   createOutbound(
                     message.actor,
-                    msg(auth.locale, getConfigCommandMissingMessageId(commandName)),
+                    msg(
+                      auth.locale,
+                      getConfigCommandMissingMessageId(commandName),
+                    ),
                   ),
                 ];
               }
@@ -9387,13 +10892,23 @@ export function createBotsService(
             if (!active.ok) return active.reply;
             const optionSource =
               commandName === "mode" && active.task.provider
-                ? await listProviderConfigOptionsForActiveTask(active.task, active.task.provider)
+                ? await listProviderConfigOptionsForActiveTask(
+                    active.task,
+                    active.task.provider,
+                  )
                 : active.configOptions;
-            const selectOption = findSelectConfigOption(optionSource, commandName);
-            const displayOptions = listConfigSelectOptions(optionSource, commandName, {
-              locale: auth.locale,
-              provider: active.task.provider,
-            });
+            const selectOption = findSelectConfigOption(
+              optionSource,
+              commandName,
+            );
+            const displayOptions = listConfigSelectOptions(
+              optionSource,
+              commandName,
+              {
+                locale: auth.locale,
+                provider: active.task.provider,
+              },
+            );
             const option =
               resolvePendingSelectionOption(
                 message.actor,
@@ -9404,7 +10919,10 @@ export function createBotsService(
               return [
                 createOutbound(
                   message.actor,
-                  msg(auth.locale, getConfigCommandMissingMessageId(commandName)),
+                  msg(
+                    auth.locale,
+                    getConfigCommandMissingMessageId(commandName),
+                  ),
                 ),
               ];
             }
@@ -9412,12 +10930,17 @@ export function createBotsService(
               return [
                 createOutbound(
                   message.actor,
-                  msg(auth.locale, getConfigCommandMissingMessageId(commandName)),
+                  msg(
+                    auth.locale,
+                    getConfigCommandMissingMessageId(commandName),
+                  ),
                 ),
               ];
             }
             const traceId = generateTraceId(active.taskId);
-            const zcodeTaskService = await resolveZCodeTaskServiceForContext(auth.context);
+            const zcodeTaskService = await resolveZCodeTaskServiceForContext(
+              auth.context,
+            );
             const configOptions = await zcodeTaskService.setConfigOption({
               taskId: active.taskId,
               traceId,
@@ -9439,14 +10962,21 @@ export function createBotsService(
             const auth = await withAuthorizedContext(message, "task");
             if (!auth.ok) return auth.reply;
             if (message.actor.threadId)
-              return createStatusReply(message.actor, auth.context, auth.locale);
+              return createStatusReply(
+                message.actor,
+                auth.context,
+                auth.locale,
+              );
             const taskEntry = await resolveTaskSelectionEntry(
               message,
               auth.context,
               auth.user,
               command.value,
             );
-            if (!taskEntry) return [createOutbound(message.actor, msg(auth.locale, "taskMissing"))];
+            if (!taskEntry)
+              return [
+                createOutbound(message.actor, msg(auth.locale, "taskMissing")),
+              ];
             const { task } = taskEntry;
             const blockReason =
               auth.context.activeTaskId !== task.taskId
@@ -9456,7 +10986,9 @@ export function createBotsService(
               // Bugfix: 运行中的旧 task 已经建立了第三方 stream 订阅。
               // 如果此时允许 /task 改写 activeTaskId，后续输入会落到新 task，
               // 但旧 task 输出仍会继续回到同一 bot 会话，用户会误以为消息串线。
-              return [createOutbound(message.actor, msg(auth.locale, blockReason))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, blockReason)),
+              ];
             }
             const nextContext = {
               ...auth.context,
@@ -9467,7 +10999,9 @@ export function createBotsService(
             if (auth.context.activeTaskId !== nextContext.activeTaskId)
               stopGroupSynchronization(auth.context);
             await restoreGroupSynchronization(nextContext);
-            pendingTaskSelectionsByContext.delete(getActorContextKey(message.actor));
+            pendingTaskSelectionsByContext.delete(
+              getActorContextKey(message.actor),
+            );
             return createStatusReply(message.actor, nextContext, auth.locale);
           }
           case "reply.list": {
@@ -9484,9 +11018,15 @@ export function createBotsService(
                     auth.bot.provider,
                   ),
                 }),
-                currentId: normalizeBotReplyGranularity(auth.bot.provider, auth.bot.replyMode),
+                currentId: normalizeBotReplyGranularity(
+                  auth.bot.provider,
+                  auth.bot.replyMode,
+                ),
                 action: "reply.set",
-                options: getReplyGranularityOptions(auth.locale, auth.bot.provider),
+                options: getReplyGranularityOptions(
+                  auth.locale,
+                  auth.bot.provider,
+                ),
               },
               auth.locale,
             );
@@ -9500,7 +11040,9 @@ export function createBotsService(
               auth.bot.provider,
             );
             if (!replyGranularity)
-              return [createOutbound(message.actor, msg(auth.locale, "replyMissing"))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, "replyMissing")),
+              ];
             await service.saveBot({
               bot: {
                 ...auth.bot,
@@ -9529,16 +11071,22 @@ export function createBotsService(
               await repo.writeState(state);
             });
             if (auth.context.activeTaskId) {
-              const service = await resolveZCodeTaskServiceForContext(auth.context);
+              const service = await resolveZCodeTaskServiceForContext(
+                auth.context,
+              );
               const target = {
                 taskId: auth.context.activeTaskId,
                 workspacePath: auth.context.workspacePath,
                 workspaceIdentity: auth.context.workspaceIdentity,
               };
-              if (!service.readBotTopicExecution || !service.stopBotTopicExecution)
+              if (
+                !service.readBotTopicExecution ||
+                !service.stopBotTopicExecution
+              )
                 throw new Error("Topic runtime control is unavailable");
               const executionId = await service.readBotTopicExecution(target);
-              if (executionId) await stopTopicRun(auth.context, executionId.executionId);
+              if (executionId)
+                await stopTopicRun(auth.context, executionId.executionId);
             }
             return [
               createOutbound(
@@ -9552,24 +11100,35 @@ export function createBotsService(
           case "stop": {
             const auth = await withAuthorizedContext(message, "stop");
             if (!auth.ok) return auth.reply;
-            if (auth.context.group?.threadId) await cancelTopicInputs(message.actor);
+            if (auth.context.group?.threadId)
+              await cancelTopicInputs(message.actor);
             if (!auth.context.activeTaskId) {
-              return [createOutbound(message.actor, msg(auth.locale, "noActiveTask"))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, "noActiveTask")),
+              ];
             }
             try {
-              const zcodeTaskService = await resolveZCodeTaskServiceForContext(auth.context);
+              const zcodeTaskService = await resolveZCodeTaskServiceForContext(
+                auth.context,
+              );
               if (auth.context.group?.threadId) {
                 if (!zcodeTaskService.readBotTopicExecution)
                   throw new Error("Topic runtime control is unavailable");
-                const executionId = await zcodeTaskService.readBotTopicExecution({
+                const executionId =
+                  await zcodeTaskService.readBotTopicExecution({
+                    taskId: auth.context.activeTaskId,
+                    workspacePath: auth.context.workspacePath,
+                    workspaceIdentity: auth.context.workspaceIdentity,
+                  });
+                if (executionId)
+                  await stopTopicRun(auth.context, executionId.executionId);
+              } else
+                await zcodeTaskService.stopGeneration({
                   taskId: auth.context.activeTaskId,
-                  workspacePath: auth.context.workspacePath,
-                  workspaceIdentity: auth.context.workspaceIdentity,
                 });
-                if (executionId) await stopTopicRun(auth.context, executionId.executionId);
-              } else await zcodeTaskService.stopGeneration({ taskId: auth.context.activeTaskId });
             } catch (error) {
-              const messageText = error instanceof Error ? error.message : String(error);
+              const messageText =
+                error instanceof Error ? error.message : String(error);
               return [
                 createOutbound(
                   message.actor,
@@ -9579,7 +11138,11 @@ export function createBotsService(
             }
             runningTasks.delete(auth.context.activeTaskId);
             stopTyping(auth.context.activeTaskId);
-            await broadcastTaskListChange(auth.context, auth.context.activeTaskId, "updated");
+            await broadcastTaskListChange(
+              auth.context,
+              auth.context.activeTaskId,
+              "updated",
+            );
             // 群聊成功停止只更新状态，避免状态卡再次触发机器人互答。
             return auth.context.group
               ? []
@@ -9589,7 +11152,9 @@ export function createBotsService(
             const auth = await withAuthorizedContext(message, "approve");
             if (!auth.ok) return auth.reply;
             if (!auth.context.activeTaskId)
-              return [createOutbound(message.actor, msg(auth.locale, "noActiveTask"))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, "noActiveTask")),
+              ];
             const optionIndex = Number.parseInt(command.value, 10) - 1;
             const option = Number.isFinite(optionIndex)
               ? auth.context.pendingPermissionOptions?.[optionIndex]
@@ -9599,10 +11164,22 @@ export function createBotsService(
               `permission callback task=${auth.context.activeTaskId} user=${message.actor.providerUserId} optionIndex=${optionIndex + 1} pending=${auth.context.pendingPermissionOptions?.length ?? 0} option=${option ? `${option.command}:${option.optionId}` : "missing"} handled=${option?.handledAt ? "yes" : "no"}`,
             );
             if (!option)
-              return [createOutbound(message.actor, msg(auth.locale, "permissionExpired"))];
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "permissionExpired"),
+                ),
+              ];
             if (option.handledAt)
-              return [createOutbound(message.actor, msg(auth.locale, "permissionHandled"))];
-            const zcodeTaskService = await resolveZCodeTaskServiceForContext(auth.context);
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "permissionHandled"),
+                ),
+              ];
+            const zcodeTaskService = await resolveZCodeTaskServiceForContext(
+              auth.context,
+            );
             const submitted = await zcodeTaskService.respondPermission({
               taskId: auth.context.activeTaskId,
               requestId: option.requestId,
@@ -9612,15 +11189,23 @@ export function createBotsService(
             // 修复原因：权限和问答必须以同一个 v4 ACK 为提交点。ACK 失败前不能持久化
             // handledAt，否则 Telegram/文本序号按钮无法重试，runtime 仍会继续等待权限。
             const handledAt = Date.now();
-            const nextPermissionOptions = auth.context.pendingPermissionOptions?.map((item) =>
-              item.requestId === option.requestId ? { ...item, handledAt } : item,
-            );
+            const nextPermissionOptions =
+              auth.context.pendingPermissionOptions?.map((item) =>
+                item.requestId === option.requestId
+                  ? { ...item, handledAt }
+                  : item,
+              );
             botsLogger.info(
               undefined,
               `permission callback respond task=${auth.context.activeTaskId} requestId=${option.requestId} optionId=${option.optionId} submitted=${submitted}`,
             );
             if (!submitted) {
-              return [createOutbound(message.actor, msg(auth.locale, "permissionHandled"))];
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "permissionHandled"),
+                ),
+              ];
             }
             await writeContext({
               ...auth.context,
@@ -9640,7 +11225,9 @@ export function createBotsService(
                 message.actor,
                 msg(
                   auth.locale,
-                  option.command === "deny" ? "permissionDenied" : "permissionSubmitted",
+                  option.command === "deny"
+                    ? "permissionDenied"
+                    : "permissionSubmitted",
                 ),
               ),
             ];
@@ -9648,19 +11235,33 @@ export function createBotsService(
           case "elicitation.respond": {
             const auth = await withAuthorizedContext(message, "message");
             if (!auth.ok) return auth.reply;
-            return handlePendingElicitationValue(auth, message.actor, command.value);
+            return handlePendingElicitationValue(
+              auth,
+              message.actor,
+              command.value,
+            );
           }
           case "elicitation.submit": {
             const auth = await withAuthorizedContext(message, "message");
             if (!auth.ok) return auth.reply;
             const pending = auth.context.pendingElicitation;
             if (!pending) {
-              return [createOutbound(message.actor, msg(auth.locale, "elicitationExpired"))];
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "elicitationExpired"),
+                ),
+              ];
             }
             if (message.actor.provider !== "weixin") {
               // Bugfix: 非微信通道的“完成”应从带 token 的按钮进入 elicitation.respond。
               // 直接 /elicitation submit 没有轮次标识，可能误提交上一轮 AskUserQuestion。
-              return [createOutbound(message.actor, msg(auth.locale, "elicitationExpired"))];
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "elicitationExpired"),
+                ),
+              ];
             }
             return submitPendingElicitation(
               auth,
@@ -9674,15 +11275,25 @@ export function createBotsService(
             const auth = await withAuthorizedContext(message, "approve");
             if (!auth.ok) return auth.reply;
             if (!auth.context.activeTaskId)
-              return [createOutbound(message.actor, msg(auth.locale, "noActiveTask"))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, "noActiveTask")),
+              ];
             const pendingOption = auth.context.pendingPermissionOptions?.find(
               (option) =>
-                option.requestId === command.requestId && option.optionId === command.optionId,
+                option.requestId === command.requestId &&
+                option.optionId === command.optionId,
             );
             if (!pendingOption) {
-              return [createOutbound(message.actor, msg(auth.locale, "permissionHandled"))];
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "permissionHandled"),
+                ),
+              ];
             }
-            const zcodeTaskService = await resolveZCodeTaskServiceForContext(auth.context);
+            const zcodeTaskService = await resolveZCodeTaskServiceForContext(
+              auth.context,
+            );
             const submitted = await zcodeTaskService.respondPermission({
               taskId: auth.context.activeTaskId,
               requestId: command.requestId,
@@ -9690,7 +11301,12 @@ export function createBotsService(
               response: pendingOption.response,
             });
             if (!submitted)
-              return [createOutbound(message.actor, msg(auth.locale, "permissionHandled"))];
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "permissionHandled"),
+                ),
+              ];
             await broadcastTaskListChange(
               auth.context,
               auth.context.activeTaskId,
@@ -9700,17 +11316,28 @@ export function createBotsService(
               },
             );
             startTyping(auth.bot, message.actor, auth.context.activeTaskId);
-            return [createOutbound(message.actor, msg(auth.locale, "permissionSubmitted"))];
+            return [
+              createOutbound(
+                message.actor,
+                msg(auth.locale, "permissionSubmitted"),
+              ),
+            ];
           }
           case "deny": {
             const auth = await withAuthorizedContext(message, "approve");
             if (!auth.ok) return auth.reply;
             if (!auth.context.activeTaskId)
-              return [createOutbound(message.actor, msg(auth.locale, "noActiveTask"))];
+              return [
+                createOutbound(message.actor, msg(auth.locale, "noActiveTask")),
+              ];
             const pendingOption = auth.context.pendingPermissionOptions?.find(
-              (option) => option.requestId === command.requestId && option.command === "deny",
+              (option) =>
+                option.requestId === command.requestId &&
+                option.command === "deny",
             );
-            const zcodeTaskService = await resolveZCodeTaskServiceForContext(auth.context);
+            const zcodeTaskService = await resolveZCodeTaskServiceForContext(
+              auth.context,
+            );
             const submitted = await zcodeTaskService.respondPermission({
               taskId: auth.context.activeTaskId,
               requestId: command.requestId,
@@ -9721,7 +11348,12 @@ export function createBotsService(
               },
             });
             if (!submitted)
-              return [createOutbound(message.actor, msg(auth.locale, "permissionHandled"))];
+              return [
+                createOutbound(
+                  message.actor,
+                  msg(auth.locale, "permissionHandled"),
+                ),
+              ];
             await broadcastTaskListChange(
               auth.context,
               auth.context.activeTaskId,
@@ -9731,7 +11363,12 @@ export function createBotsService(
               },
             );
             startTyping(auth.bot, message.actor, auth.context.activeTaskId);
-            return [createOutbound(message.actor, msg(auth.locale, "permissionDenied"))];
+            return [
+              createOutbound(
+                message.actor,
+                msg(auth.locale, "permissionDenied"),
+              ),
+            ];
           }
           case "unknown":
             return [
@@ -9748,17 +11385,26 @@ export function createBotsService(
       };
       if (!(await admitAutoReplyTurn(message))) return [];
       const replies =
-        message.actor.chatType === "group" && message.actor.threadId && commandType === "message"
+        message.actor.chatType === "group" &&
+        message.actor.threadId &&
+        commandType === "message"
           ? await receiveTopicMessage(message)
-          : await enqueueInboundProcessing(message.actor, processInbound, isGroupControl);
+          : await enqueueInboundProcessing(
+              message.actor,
+              processInbound,
+              isGroupControl,
+            );
       if (message.actor.chatType !== "group") return replies;
-      const current = (await repo.readState()).bots[getBotConversationKey(message.actor)];
+      const current = (await repo.readState()).bots[
+        getBotConversationKey(message.actor)
+      ];
       return replies.map((reply) =>
         reply.selection && current?.group?.authorizationId
           ? {
               ...reply,
               threadId: message.actor.threadId ?? current.group.threadId,
-              rootMessageId: message.actor.rootMessageId ?? current.group.rootMessageId,
+              rootMessageId:
+                message.actor.rootMessageId ?? current.group.rootMessageId,
               groupCard: groupCardFor(message.actor, current),
             }
           : reply,
@@ -9767,7 +11413,10 @@ export function createBotsService(
     async handleProviderCallback(provider: BotProvider, payload: unknown) {
       return (await processProviderCallback(provider, payload)).replies;
     },
-    async handleProviderCallbackResponse(provider: BotProvider, payload: unknown) {
+    async handleProviderCallbackResponse(
+      provider: BotProvider,
+      payload: unknown,
+    ) {
       return processProviderCallback(provider, payload);
     },
     disposeAll() {
@@ -9789,7 +11438,8 @@ export function createBotsService(
       for (const key of pendingTopicKeys) {
         topicGenerations.set(key, (topicGenerations.get(key) ?? 0) + 1);
         topicContinuations.get(key)?.cancel();
-        for (const resolve of topicReplies.get(key)?.values() ?? []) resolve([]);
+        for (const resolve of topicReplies.get(key)?.values() ?? [])
+          resolve([]);
         topicReplies.get(key)?.clear();
       }
       const cancelUploads = (async () => {
@@ -9798,7 +11448,8 @@ export function createBotsService(
           pendingTopicKeys.map(async (key) => {
             const context = states[key];
             if (!context?.activeTaskId) return;
-            const taskService = await resolveZCodeTaskServiceForContext(context);
+            const taskService =
+              await resolveZCodeTaskServiceForContext(context);
             await taskService.invalidateBotTopicInputs?.({
               taskId: context.activeTaskId,
               workspacePath: context.workspacePath,
@@ -9844,6 +11495,7 @@ export function createBotsService(
         telegramRuntime.dispose(),
         weixinRuntime.dispose(),
         feishuRuntime.dispose(),
+        qqRuntime.dispose(),
       ]).then(() => undefined);
       return shutdownPromise;
     },
@@ -9857,9 +11509,12 @@ export function createBotsService(
         .readState()
         .then(async (state) => {
           for (const context of Object.values(state.bots))
-            if (!context.group) await reconcilePrivateSynchronization(context.botId);
+            if (!context.group)
+              await reconcilePrivateSynchronization(context.botId);
         })
-        .catch(() => botsLogger.warn(undefined, "Private Bot recovery state unavailable"))
+        .catch(() =>
+          botsLogger.warn(undefined, "Private Bot recovery state unavailable"),
+        )
         .finally(() => {
           privateRecoveryPending = false;
         });
@@ -9868,11 +11523,13 @@ export function createBotsService(
     void telegramRuntime.refresh();
     void weixinRuntime.refresh();
     void feishuRuntime.refresh();
+    void qqRuntime.refresh();
     void ensureBotStorageMigrated()
       .then(async () => {
         for (const context of Object.values((await repo.readState()).bots)) {
           await restoreGroupSynchronization(context);
-          if (!context.group) await reconcilePrivateSynchronization(context.botId);
+          if (!context.group)
+            await reconcilePrivateSynchronization(context.botId);
         }
       })
       .catch((error: unknown) => {

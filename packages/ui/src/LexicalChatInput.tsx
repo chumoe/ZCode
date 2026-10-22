@@ -34,16 +34,20 @@ import {
   $getNodeByKey,
   $setSelection,
   $getRoot,
+  $isElementNode,
   $isParagraphNode,
   $isRangeSelection,
   $isTextNode,
   KEY_ARROW_DOWN_COMMAND,
   KEY_ARROW_UP_COMMAND,
   KEY_BACKSPACE_COMMAND,
+  KEY_DELETE_COMMAND,
   COMMAND_PRIORITY_HIGH,
   KEY_ENTER_COMMAND,
+  SELECTION_CHANGE_COMMAND,
   type EditorState,
   type LexicalEditor,
+  type RangeSelection,
 } from "lexical";
 import { SlashCommandPlugin } from "./SlashCommandPlugin.js";
 import type { AppSlashCommand } from "./slashCommandHelpers.js";
@@ -61,6 +65,15 @@ import { resolveMobileInputTextSizeClassName } from "@/lib/mobileTextInput.js";
 import type { MentionItemData } from "@/mentions/mentionTypes.js";
 import type { ComposerMentionPrefill } from "@/store/zcodeSessionStoreTypes.js";
 
+/** 附件/上下文 chip 被删除时派发的事件，通知 ConversationComposer 同步清理附件 state。 */
+export const ATTACHMENT_CHIP_REMOVE_EVENT = "zcode:attachment-chip-remove";
+
+function dispatchAttachmentChipRemoveEvent(attachmentId: string) {
+  window.dispatchEvent(
+    new CustomEvent(ATTACHMENT_CHIP_REMOVE_EVENT, { detail: { attachmentId } }),
+  );
+}
+
 /** 旧 useChatComposer 已删；粘贴事件收口为最小结构类型（ClipboardEvent 结构兼容）。 */
 export interface ChatComposerPasteEvent {
   clipboardData: DataTransfer | null;
@@ -76,6 +89,20 @@ export interface LexicalChatInputHandle {
   getText: () => string;
   appendText: (text: string) => void;
   appendFileMention: (
+    label: string,
+    value: string,
+    markdown: string,
+    data?: MentionItemData,
+    trailingText?: string,
+  ) => void;
+  appendAttachmentChip: (
+    label: string,
+    value: string,
+    markdown: string,
+    data?: MentionItemData,
+    trailingText?: string,
+  ) => void;
+  appendContextChip: (
     label: string,
     value: string,
     markdown: string,
@@ -390,9 +417,56 @@ function appendEditorFileMention(
   markdown: string,
   data?: MentionItemData,
   trailingText = " ",
+  savedSelection?: RangeSelection | null,
 ) {
   editor.update(
     () => {
+      // 优先在保存的光标位置插入，否则追加到末尾
+      const selection = savedSelection ?? $getSelection();
+      if ($isRangeSelection(selection) && selection.isCollapsed()) {
+        const node = selection.anchor.getNode();
+        const parent = $isElementNode(node) ? node : node.getParent();
+        if ($isElementNode(parent)) {
+          const mentionNode = $createPromptMentionNode({
+            id: `dropped-file:${value}`,
+            category: "files",
+            label,
+            value,
+            markdown,
+            data,
+          });
+          const trailingNode = $createTextNode(trailingText);
+          if (
+            $isTextNode(node) &&
+            selection.anchor.offset > 0 &&
+            selection.anchor.offset < node.getTextContentSize()
+          ) {
+            const splitResult = node.splitText(selection.anchor.offset);
+            const after = splitResult[1];
+            if (after) {
+              after.insertBefore(mentionNode);
+              after.insertBefore(trailingNode);
+              trailingNode.selectEnd();
+            }
+            return;
+          }
+          if ($isTextNode(node)) {
+            const afterNode = node.getNextSibling();
+            if (afterNode) {
+              afterNode.insertBefore(mentionNode);
+              afterNode.insertBefore(trailingNode);
+            } else {
+              parent.append(mentionNode, trailingNode);
+            }
+          } else {
+            parent.append(mentionNode, trailingNode);
+          }
+          trailingNode.selectEnd();
+          return;
+        }
+      }
+
+      // Fallback: 追加到末尾
       const root = $getRoot();
       const lastChild = root.getLastChild();
       const paragraph = $isParagraphNode(lastChild) ? lastChild : $createParagraphNode();
@@ -409,6 +483,180 @@ function appendEditorFileMention(
         $createPromptMentionNode({
           id: `dropped-file:${value}`,
           category: "files",
+          label,
+          value,
+          markdown,
+          data,
+        }),
+        $createTextNode(trailingText),
+      );
+      paragraph.selectEnd();
+    },
+    { tag: PROGRAMMATIC_UPDATE_TAG },
+  );
+}
+
+function appendEditorAttachmentChip(
+  editor: LexicalEditor,
+  label: string,
+  value: string,
+  markdown: string,
+  data?: MentionItemData,
+  trailingText = " ",
+  savedSelection?: RangeSelection | null,
+) {
+  editor.update(
+    () => {
+      // 优先在保存的光标位置插入，否则追加到末尾
+      const selection = savedSelection ?? $getSelection();
+      if ($isRangeSelection(selection) && selection.isCollapsed()) {
+        const node = selection.anchor.getNode();
+        const parent = $isElementNode(node) ? node : node.getParent();
+        if ($isElementNode(parent)) {
+          const mentionNode = $createPromptMentionNode({
+            id: data?.attachmentId ?? `attachment:${value}`,
+            category: "attachments",
+            label,
+            value,
+            markdown,
+            data,
+          });
+          const trailingNode = $createTextNode(trailingText);
+          // 光标在文本节点中间：分割后插入
+          if (
+            $isTextNode(node) &&
+            selection.anchor.offset > 0 &&
+            selection.anchor.offset < node.getTextContentSize()
+          ) {
+            const splitResult = node.splitText(selection.anchor.offset);
+            const after = splitResult[1];
+            if (after) {
+              after.insertBefore(mentionNode);
+              after.insertBefore(trailingNode);
+              trailingNode.selectEnd();
+            }
+            return;
+          }
+          // 光标在文本节点末尾或段落末尾
+          if ($isTextNode(node)) {
+            const afterNode = node.getNextSibling();
+            if (afterNode) {
+              afterNode.insertBefore(mentionNode);
+              afterNode.insertBefore(trailingNode);
+            } else {
+              parent.append(mentionNode, trailingNode);
+            }
+          } else {
+            parent.append(mentionNode, trailingNode);
+          }
+          trailingNode.selectEnd();
+          return;
+        }
+      }
+
+      // Fallback: 追加到末尾
+      const root = $getRoot();
+      const lastChild = root.getLastChild();
+      const paragraph = $isParagraphNode(lastChild) ? lastChild : $createParagraphNode();
+      if (!$isParagraphNode(lastChild)) {
+        root.append(paragraph);
+      }
+
+      const currentText = paragraph.getTextContent();
+      if (currentText.length > 0 && !/\s$/.test(currentText)) {
+        paragraph.append($createTextNode(" "));
+      }
+
+      paragraph.append(
+        $createPromptMentionNode({
+          id: data?.attachmentId ?? `attachment:${value}`,
+          category: "attachments",
+          label,
+          value,
+          markdown,
+          data,
+        }),
+        $createTextNode(trailingText),
+      );
+      paragraph.selectEnd();
+    },
+    { tag: PROGRAMMATIC_UPDATE_TAG },
+  );
+}
+
+function appendEditorContextChip(
+  editor: LexicalEditor,
+  label: string,
+  value: string,
+  markdown: string,
+  data?: MentionItemData,
+  trailingText = " ",
+  savedSelection?: RangeSelection | null,
+) {
+  editor.update(
+    () => {
+      // 优先在保存的光标位置插入，否则追加到末尾
+      const selection = savedSelection ?? $getSelection();
+      if ($isRangeSelection(selection) && selection.isCollapsed()) {
+        const node = selection.anchor.getNode();
+        const parent = $isElementNode(node) ? node : node.getParent();
+        if ($isElementNode(parent)) {
+          const mentionNode = $createPromptMentionNode({
+            id: data?.attachmentId ?? `context:${value}`,
+            category: "contexts",
+            label,
+            value,
+            markdown,
+            data,
+          });
+          const trailingNode = $createTextNode(trailingText);
+          if (
+            $isTextNode(node) &&
+            selection.anchor.offset > 0 &&
+            selection.anchor.offset < node.getTextContentSize()
+          ) {
+            const splitResult = node.splitText(selection.anchor.offset);
+            const after = splitResult[1];
+            if (after) {
+              after.insertBefore(mentionNode);
+              after.insertBefore(trailingNode);
+              trailingNode.selectEnd();
+            }
+            return;
+          }
+          if ($isTextNode(node)) {
+            const afterNode = node.getNextSibling();
+            if (afterNode) {
+              afterNode.insertBefore(mentionNode);
+              afterNode.insertBefore(trailingNode);
+            } else {
+              parent.append(mentionNode, trailingNode);
+            }
+          } else {
+            parent.append(mentionNode, trailingNode);
+          }
+          trailingNode.selectEnd();
+          return;
+        }
+      }
+
+      // Fallback: 追加到末尾
+      const root = $getRoot();
+      const lastChild = root.getLastChild();
+      const paragraph = $isParagraphNode(lastChild) ? lastChild : $createParagraphNode();
+      if (!$isParagraphNode(lastChild)) {
+        root.append(paragraph);
+      }
+
+      const currentText = paragraph.getTextContent();
+      if (currentText.length > 0 && !/\s$/.test(currentText)) {
+        paragraph.append($createTextNode(" "));
+      }
+
+      paragraph.append(
+        $createPromptMentionNode({
+          id: data?.attachmentId ?? `context:${value}`,
+          category: "contexts",
           label,
           value,
           markdown,
@@ -679,9 +927,17 @@ function KeyboardPlugin({
         }
 
         // mention 插入时会自动补一个空格用于继续输入，
-        // 之前 Backspace 会先删这个空格，再删 token，用户体感是“要按两次才删掉标签”。
-        // 这里在“光标正好位于补位空格后”时，直接一次性删除空格 + mention token。
+        // 之前 Backspace 会先删这个空格，再删 token，用户体感是"要按两次才删掉标签"。
+        // 这里在"光标正好位于补位空格后"时，直接一次性删除空格 + mention token。
         event?.preventDefault();
+        // 附件/上下文 chip 被删除时派发事件，通知外部同步清理附件 state
+        if (
+          (previousSibling.__category === "attachments" ||
+            previousSibling.__category === "contexts") &&
+          previousSibling.__data?.attachmentId
+        ) {
+          dispatchAttachmentChipRemoveEvent(previousSibling.__data.attachmentId);
+        }
         previousSibling.remove();
         node.remove();
         node.getParent()?.selectEnd();
@@ -689,6 +945,102 @@ function KeyboardPlugin({
       },
       COMMAND_PRIORITY_HIGH,
     );
+
+    // Delete 键：光标紧贴 attachment/context chip 前方时，删除 chip + 尾随空格
+    const unregisterDelete = editor.registerCommand(
+      KEY_DELETE_COMMAND,
+      (event: KeyboardEvent | null) => {
+        const selection = $getSelection();
+        if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
+          return false;
+        }
+
+        const anchor = selection.anchor;
+        if (anchor.type !== "text") {
+          return false;
+        }
+
+        const node = anchor.getNode();
+        if (!$isTextNode(node)) {
+          return false;
+        }
+
+        const text = node.getTextContent();
+        // 光标在文本节点末尾，且下一个兄弟是 mention
+        if (anchor.offset !== text.length) {
+          return false;
+        }
+
+        const nextSibling = node.getNextSibling();
+        if (!$isPromptMentionNode(nextSibling)) {
+          return false;
+        }
+
+        // 只对附件/上下文 chip 生效（普通 mention 由 Lexical 默认处理即可）
+        const category = nextSibling.__category;
+        if (category !== "attachments" && category !== "contexts") {
+          return false;
+        }
+
+        event?.preventDefault();
+        // 附件/上下文 chip 被删除时派发事件，通知外部同步清理附件 state
+        if (nextSibling.__data?.attachmentId) {
+          dispatchAttachmentChipRemoveEvent(nextSibling.__data.attachmentId);
+        }
+        const afterMention = nextSibling.getNextSibling();
+        nextSibling.remove();
+        // 同时删除 mention 后的补位空格
+        if ($isTextNode(afterMention) && afterMention.getTextContent() === " ") {
+          afterMention.remove();
+        }
+        node.getParent()?.selectEnd();
+        return true;
+      },
+      COMMAND_PRIORITY_HIGH,
+    );
+
+    // 点击附件/上下文 chip 时删除该 chip（与文件 mention 同风格，点击即删）
+    const handleClickForChipDelete = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      // 只处理 prompt-mention 节点上的点击
+      const chipEl = target.closest<HTMLElement>(
+        '.prompt-mention[data-mention-category="attachments"], .prompt-mention[data-mention-category="contexts"]',
+      );
+      if (!chipEl) return;
+
+      const mentionId = chipEl.getAttribute("data-mention-id");
+      if (!mentionId) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      // 通过 Lexical node mutation 删除该 chip
+      editor.update(() => {
+        const root = $getRoot();
+        for (const paragraph of root.getChildren()) {
+          if (!$isElementNode(paragraph)) continue;
+          for (const child of paragraph.getChildren()) {
+            if ($isPromptMentionNode(child) && child.__mentionId === mentionId) {
+              // 附件/上下文 chip 被删除时派发事件，通知外部同步清理附件 state
+              if (child.__data?.attachmentId) {
+                dispatchAttachmentChipRemoveEvent(child.__data.attachmentId);
+              }
+              // 同时删除尾随补位空格
+              const afterMention = child.getNextSibling();
+              child.remove();
+              if ($isTextNode(afterMention) && afterMention.getTextContent() === " ") {
+                afterMention.remove();
+              }
+              paragraph.selectEnd();
+              return;
+            }
+          }
+        }
+      });
+    };
+
+    const rootElement = editor.getRootElement();
+    rootElement?.addEventListener("click", handleClickForChipDelete, true);
 
     const handleRootKeyDownCapture = (event: KeyboardEvent) => {
       if (
@@ -782,7 +1134,9 @@ function KeyboardPlugin({
     return () => {
       unregisterEnter();
       unregisterBackspace();
+      unregisterDelete();
       unregisterRootListener();
+      editor.getRootElement()?.removeEventListener("click", handleClickForChipDelete, true);
       editor.getRootElement()?.removeEventListener("keydown", handleRootKeyDownCapture, {
         capture: true,
       });
@@ -1070,7 +1424,7 @@ function PromptHistoryPlugin({
       const text = getEditorMarkdown(editor.getEditorState());
       const currentIndex = historyIndexRef.current;
 
-      // 历史导航只在“空输入”或“已经进入历史浏览态”时接管上下键，
+      // 历史导航只在"空输入"或"已经进入历史浏览态"时接管上下键，
       // 避免抢走多行输入原本的光标移动行为。
       if (currentIndex === null && text.length > 0) {
         return false;
@@ -1211,7 +1565,7 @@ function PasteCapturePlugin({
       onPaste(event);
       if (event.defaultPrevented && !wasDefaultPrevented) {
         // 长文本已经被转成附件后，必须阻断 Lexical 后续 paste command，
-        // 否则会出现“附件有了，正文也被插入”的双份内容。
+        // 否则会出现"附件有了，正文也被插入"的双份内容。
         event.stopImmediatePropagation();
       }
     };
@@ -1262,6 +1616,30 @@ function EditorApiPlugin({
 }) {
   const [editor] = useLexicalComposerContext();
 
+  // 失焦后保存最后选区，以便附件 chip 在光标位置而非末尾插入
+  const savedSelectionRef = useRef<RangeSelection | null>(null);
+
+  useEffect(() => {
+    const unregisterSelectionChange = editor.registerCommand(
+      SELECTION_CHANGE_COMMAND,
+      () => {
+        // 只在编辑器有焦点时保存选区
+        if (editor.isEditable()) {
+          editor.read(() => {
+            const selection = $getSelection();
+            savedSelectionRef.current = $isRangeSelection(selection) ? selection.clone() : null;
+          });
+        }
+        return false;
+      },
+      COMMAND_PRIORITY_HIGH,
+    );
+
+    return () => {
+      unregisterSelectionChange();
+    };
+  }, [editor]);
+
   useEffect(() => {
     if (!editorApiRef) {
       return;
@@ -1280,7 +1658,48 @@ function EditorApiPlugin({
         markdown: string,
         data?: MentionItemData,
         trailingText = " ",
-      ) => appendEditorFileMention(editor, label, value, markdown, data, trailingText),
+      ) =>
+        appendEditorFileMention(
+          editor,
+          label,
+          value,
+          markdown,
+          data,
+          trailingText,
+          savedSelectionRef.current,
+        ),
+      appendAttachmentChip: (
+        label: string,
+        value: string,
+        markdown: string,
+        data?: MentionItemData,
+        trailingText = " ",
+      ) =>
+        appendEditorAttachmentChip(
+          editor,
+          label,
+          value,
+          markdown,
+          data,
+          trailingText,
+          savedSelectionRef.current,
+        ),
+      appendContextChip: (
+        label: string,
+        value: string,
+        markdown: string,
+        data?: MentionItemData,
+        trailingText = " ",
+      ) =>
+        appendEditorContextChip(
+          editor,
+          label,
+          value,
+          markdown,
+          data,
+          trailingText,
+          savedSelectionRef.current,
+        ),
       insertMention: (mention, selectionState) =>
         insertEditorMention(editor, mention, selectionState),
       prependMentionIfMissing: (mention) => prependEditorMentionIfMissing(editor, mention),

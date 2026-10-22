@@ -53,6 +53,13 @@ export async function applyDesktopChromiumNetworkPolicies(
   settings: DesktopNetworkPolicySettings,
   logger: DesktopNetworkPolicyLogger,
 ): Promise<void> {
+  // 伪装内置浏览器 UA 为纯 Chrome，移除 Electron 标识避免反爬降级。
+  // Electron 41.0.3 → Chromium ~134；保留 AppleWebKit/Chrome/Safari 标识。
+  const embeddedBrowserSession = sessionProvider.fromPartition(EMBEDDED_BROWSER_PARTITION);
+  embeddedBrowserSession.setUserAgent(
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+  );
+
   const targets = [
     {
       name: "default-session",
@@ -63,7 +70,7 @@ export async function applyDesktopChromiumNetworkPolicies(
     },
     {
       name: "embedded-browser",
-      session: sessionProvider.fromPartition(EMBEDDED_BROWSER_PARTITION),
+      session: embeddedBrowserSession,
       // 自签名放行只开在内置浏览器出口：defaultSession 承载 renderer 对 ZCode 后端与模型 API
       // 的流量，在那里放行等于整个应用失去 TLS 保护，与「访问内网测试站点」的诉求不成比例。
       allowInsecure: settings.embeddedBrowserAllowInsecureCertificates === true,

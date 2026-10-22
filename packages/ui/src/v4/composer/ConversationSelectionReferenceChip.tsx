@@ -100,7 +100,7 @@ export function ConversationSelectionReferenceChip({
               type="button"
               variant="ghost"
               size="icon-xs"
-              className="size-5 shrink-0 text-foreground-subtle opacity-0 group-hover/reference:opacity-100"
+	              className="size-5 shrink-0 text-foreground-subtle hover:text-foreground"
               aria-label={removeLabel}
               onClick={() => onRemove(reference.id)}
             >

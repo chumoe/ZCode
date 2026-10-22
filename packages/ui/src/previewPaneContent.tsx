@@ -77,6 +77,12 @@ interface PreviewPaneContentProps {
   onDeleteCodeComment?: (commentId: string) => void;
   onScroll?: UIEventHandler<HTMLDivElement>;
   scrollContainerRef?: Ref<HTMLDivElement>;
+  /** 是否可编辑 */
+  editable?: boolean;
+  /** 编辑内容变更回调 */
+  onCodeChange?: (value: string) => void;
+  /** Ctrl+S 保存回调 */
+  onSave?: () => void;
 }
 
 function isSvgPath(path?: string): boolean {
@@ -135,6 +141,9 @@ export function PreviewPaneContent({
   onDeleteCodeComment,
   onScroll,
   scrollContainerRef,
+  editable = false,
+  onCodeChange,
+  onSave,
 }: PreviewPaneContentProps) {
   const { intl } = useZCodeIntl();
   const fileMissingMessage = intl.formatMessage({ id: "codeViewer.fileMissing" });
@@ -247,6 +256,9 @@ export function PreviewPaneContent({
         onDeleteCodeComment={onDeleteCodeComment}
         onScroll={onScroll}
         scrollContainerRef={scrollContainerRef}
+        editable={editable}
+        onCodeChange={onCodeChange}
+        onSave={onSave}
       />
     );
   }
@@ -475,6 +487,9 @@ export function PreviewPaneContent({
       onDeleteCodeComment={source.type === "code-review" ? undefined : onDeleteCodeComment}
       onScroll={onScroll}
       scrollContainerRef={scrollContainerRef}
+      editable={editable}
+      onCodeChange={onCodeChange}
+      onSave={onSave}
     />
   );
 }

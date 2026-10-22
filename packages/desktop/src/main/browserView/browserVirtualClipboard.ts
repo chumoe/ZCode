@@ -271,6 +271,64 @@ export async function assertFocusedInputTarget(
     throw new Error("Active element is no longer the expected input target");
 }
 
+/**
+ * CDP Input.insertText 是浏览器协议级文本输入，不依赖 JS 层焦点。
+ * Playwright 原生 fill 优先走此路径；ZCode 过去只走 JS paste 路径，
+ * 在 Electron embedder 抢焦点时会失败。现在先尝试 insertText，
+ * 失败再 fallback 到 pasteTextIntoFocusedTarget。
+ *
+ * replaceValue=true 时先通过 CDP 发 Ctrl+A (select all) + Delete 清空已有内容，
+ * 再 insertText 新值，实现 Playwright fill 的替换语义。
+ */
+async function tryCdpInsertText(
+  view: ControlledView,
+  text: string,
+  sessionId?: string,
+  replaceValue?: boolean,
+): Promise<boolean> {
+  try {
+    const send = sessionId
+      ? (method: string, params?: unknown) => view.cdp.send(method, params, sessionId)
+      : (method: string, params?: unknown) => view.cdp.send(method, params);
+
+    if (replaceValue) {
+      // Select all: Ctrl+A (或 macOS 的 Meta+A)
+      await send("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        key: "a",
+        code: "KeyA",
+        modifiers: 2, // Ctrl
+        windowsVirtualKeyCode: 65,
+      });
+      await send("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        key: "a",
+        code: "KeyA",
+        modifiers: 2,
+        windowsVirtualKeyCode: 65,
+      });
+      // Delete selected text
+      await send("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        key: "Delete",
+        code: "Delete",
+        windowsVirtualKeyCode: 46,
+      });
+      await send("Input.dispatchKeyEvent", {
+        type: "keyUp",
+        key: "Delete",
+        code: "Delete",
+        windowsVirtualKeyCode: 46,
+      });
+    }
+
+    await send("Input.insertText", { text });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function pasteTextIntoFocusedTarget(
   view: ControlledView,
   text: string,
@@ -281,7 +339,23 @@ export async function pasteTextIntoFocusedTarget(
     replaceInputValue?: boolean;
   } = {},
 ): Promise<void> {
+  // 优先走 CDP Input.insertText：协议级文本输入，不受 JS 焦点影响。
+  // replaceInputValue=true 时先 Ctrl+A + Delete 清空，再 insertText。
   const resolution = await resolveFocusedTarget(view, options.initialTarget);
+  try {
+    const inserted = await tryCdpInsertText(
+      view,
+      text,
+      resolution.target.sessionId,
+      options.replaceInputValue === true,
+    );
+    if (inserted) return;
+  } finally {
+    await detachAttachedSessions(view, resolution.attachedSessionIds);
+  }
+
+  // Fallback: JS 层虚拟粘贴（DataTransfer + ClipboardEvent / prototype setter）。
+  const resolution2 = await resolveFocusedTarget(view, options.initialTarget);
   try {
     const includeRichText =
       options.includeRichText ?? shouldIncludeRichText(view.webContents.getURL());

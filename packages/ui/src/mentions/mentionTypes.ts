@@ -5,7 +5,18 @@ export type MentionCategory =
   | "subagents"
   | "whiteboards"
   | "sessions"
-  | "plugins";
+  | "plugins"
+  | "attachments"
+  | "contexts";
+
+export type AttachmentChipType =
+  | "file"
+  | "image"
+  | "video"
+  | "web-element"
+  | "clipboard-text";
+
+export type ContextChipType = "code-comment" | "pptx" | "conversation-selection";
 
 export interface MentionItemData {
   kind?: "file" | "directory" | "whiteboard";
@@ -21,6 +32,16 @@ export interface MentionItemData {
   pluginId?: string;
   /** Plugin 商店 listing 原始图标；仅用于 UI，必须经 HTTPS 校验后加载。 */
   icon?: string;
+  /** 附件/上下文 chip 的唯一 ID，用于删除映射。 */
+  attachmentId?: string;
+  /** 附件 chip 子类型。 */
+  attachmentType?: AttachmentChipType | ContextChipType;
+  /** 文件名（附件 chip 显示用）。 */
+  filename?: string;
+  /** MIME 类型。 */
+  mimeType?: string;
+  /** 图片/视频预览 URL。 */
+  objectUrl?: string;
 }
 
 export interface MentionItem {

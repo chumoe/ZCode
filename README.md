@@ -101,6 +101,31 @@ zcode --help
 zcode --web --help
 ```
 
+#### 视觉模型 Fallback
+
+当主模型不支持图片输入时，可配置独立的视觉模型分析图片，将描述文本返回给主模型。两种配置方式：
+
+**方式 A：配置文件**（持久生效）
+
+在 Provider 配置文件中设置 `visionModelSelection`，格式与 `defaultModelSelection` 一致：
+
+```json
+{
+  "defaultModelSelection": { "providerId": "deepseek", "modelId": "deepseek-chat" },
+  "visionModelSelection": { "providerId": "openai", "modelId": "gpt-4o" }
+}
+```
+
+**方式 B：CLI 参数**（单次生效，优先级高于配置文件）
+
+```bash
+# 格式：--vision-model provider/model
+zcode --vision-model openai/gpt-4o
+zcode --web --vision-model openai/gpt-4o
+```
+
+主模型遇到图片时，若自身不支持视觉输入，会自动调用配置的视觉模型生成图片描述，以文本形式注入消息，替代默认的 `[Media omitted...]` 占位符。
+
 Web 模式默认工作目录为当前目录，监听 `127.0.0.1`，默认不启用访问令牌，自动选择空闲端口并打开浏览器。访问终端输出的地址，按 `Ctrl+C` 停止服务。局域网访问可使用 `--host 0.0.0.0`；监听非本机地址时默认生成访问令牌，使用终端输出的带令牌链接。可通过 `--token` 指定令牌或 `--no-token` 关闭令牌认证。
 
 直接启动通用 Web 服务的 HTTP 入口时，通过 `ZCODE_SERVER_AUTH_TOKEN` 配置 API／WebSocket 认证；通过程序接口创建服务时，使用 `authToken` 选项。
@@ -140,6 +165,7 @@ node apps/zcode-cli/packages/cli/dist/zcode.cjs --help
 | `ZCODE_SERVER_WORKSPACE`             | Web 后端的工作区路径                             |
 | `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE` | 本地 Provider 配置文件路径；未设置时使用内置配置 |
 | `ZCODE_DIST_BASE_URL`                | 命令行安装脚本使用的下载根地址                   |
+| `--vision-model`                     | CLI 视觉模型 fallback，格式 `provider/model`     |
 
 运行时变量可在启动命令的环境中显式设置。随客户端发布的默认配置见 [config/README.md](config/README.md)。
 

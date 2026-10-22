@@ -57,7 +57,7 @@ export function ContextAttachmentPill({
               type="button"
               variant="ghost"
               size="icon-xs"
-              className="size-5 shrink-0 rounded-full text-foreground-subtle opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+	              className="size-5 shrink-0 rounded-full text-foreground-subtle transition-opacity hover:text-foreground"
               aria-label={removeLabel}
               title={removeLabel}
               onClick={(event) => {

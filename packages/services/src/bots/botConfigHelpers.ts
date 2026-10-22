@@ -6,7 +6,10 @@ import {
   type BotProvider,
   type BotsConfigFile,
 } from "@zcode/shared";
-import { normalizeBotCommandPolicy, normalizeBotCurrentOptions } from "./config.js";
+import {
+  normalizeBotCommandPolicy,
+  normalizeBotCurrentOptions,
+} from "./config.js";
 import { normalizeAllowedWorkspaces } from "./workspaceHelpers.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -17,7 +20,10 @@ export function getContextKey(bot: Pick<BotConfig, "id">): string {
   return bot.id;
 }
 
-export function findBot(config: BotsConfigFile, botId: string): BotConfig | null {
+export function findBot(
+  config: BotsConfigFile,
+  botId: string,
+): BotConfig | null {
   return config.bots.find((bot) => bot.id === botId) ?? null;
 }
 
@@ -33,21 +39,37 @@ export function findCallbackBot(
   if (botId) {
     return findBot(config, botId);
   }
-  return config.bots.filter((bot) => bot.provider === provider && bot.enabled).at(0) ?? null;
+  return (
+    config.bots
+      .filter((bot) => bot.provider === provider && bot.enabled)
+      .at(0) ?? null
+  );
 }
 
-export function findAuthorizedBot(config: BotsConfigFile, actor: BotActor): BotConfig | null {
-  if (actor.chatType === "group" && (actor.provider === "feishu" || actor.provider === "lark")) {
+export function findAuthorizedBot(
+  config: BotsConfigFile,
+  actor: BotActor,
+): BotConfig | null {
+  if (
+    actor.chatType === "group" &&
+    (actor.provider === "feishu" || actor.provider === "lark")
+  ) {
     return (
       config.bots.find(
-        (bot) => bot.enabled && bot.id === actor.botId && bot.provider === actor.provider,
+        (bot) =>
+          bot.enabled &&
+          bot.id === actor.botId &&
+          bot.provider === actor.provider,
       ) ?? null
     );
   }
-  if (actor.provider === "weixin") {
+  if (actor.provider === "weixin" || actor.provider === "qq") {
     return (
       config.bots.find(
-        (bot) => bot.enabled && bot.provider === "weixin" && bot.id === actor.botId,
+        (bot) =>
+          bot.enabled &&
+          bot.provider === actor.provider &&
+          bot.id === actor.botId,
       ) ?? null
     );
   }
@@ -61,8 +83,17 @@ export function findAuthorizedBot(config: BotsConfigFile, actor: BotActor): BotC
   );
 }
 
-export function findBoundUser(bot: BotConfig, actor: BotActor): BotConfig | null {
-  return actor.provider === "weixin" || bot.providerUserId === actor.providerUserId ? bot : null;
+export function findBoundUser(
+  bot: BotConfig,
+  actor: BotActor,
+): BotConfig | null {
+  // 微信/QQ 扫码登录只返回机器人身份，不返回用户 id；首个入站消息的发送者即默认主人，
+  // 因此私聊一律视为已绑定（与 handleWeixinFirstActivation / handleQQFirstActivation 一致）。
+  return actor.provider === "weixin" ||
+    actor.provider === "qq" ||
+    bot.providerUserId === actor.providerUserId
+    ? bot
+    : null;
 }
 
 export function normalizeBotConfig(bot: BotConfig): BotConfig {

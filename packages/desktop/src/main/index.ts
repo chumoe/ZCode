@@ -265,7 +265,11 @@ import {
   createEmbeddedBrowserPermissionUiBridge,
   setActiveEmbeddedBrowserPermissionUiBridge,
 } from "./embeddedBrowserPermissionUiBridge.js";
-import { mapZCodeEnvToArmsRumEnv } from "@zcode/shared";
+import {
+  ZCODE_TELEMETRY_ENABLED,
+  ZCODE_ARMS_RUM_ENDPOINT,
+  mapZCodeEnvToArmsRumEnv,
+} from "@zcode/shared";
 import {
   findWindowsProcessesReferencingResourceMarkers,
   probeWindowsPackagedResourceWritable,

@@ -84,9 +84,13 @@ export function ComputerUseSection({
     (isMacDesktop ?? supportsLocalMacCuaPermissionOnboarding(platform)) &&
     isLocalWorkspace;
   const supportsLocalWindowsWorkspace = isWindowsDesktop && isLocalWorkspace;
-  const supportsComputerUseSettings = supportsLocalMacWorkspace || supportsLocalWindowsWorkspace;
+  // Linux 桌面通过 xdotool/scrot 提供截图+键鼠控制，无需 TCC 权限，与 Windows 同口径。
+  const isLinuxDesktop = isDesktop && !isMacDesktop && !isWindowsDesktop;
+  const supportsLocalLinuxWorkspace = isLinuxDesktop && isLocalWorkspace;
+  const supportsComputerUseSettings =
+    supportsLocalMacWorkspace || supportsLocalWindowsWorkspace || supportsLocalLinuxWorkspace;
   const availability = resolveComputerUseAvailability({
-    isDesktop: isDesktop || isWindowsDesktop || supportsLocalMacWorkspace,
+    isDesktop: isDesktop || isWindowsDesktop || isLinuxDesktop || supportsLocalMacWorkspace,
     isMacDesktop: isMacDesktop || supportsLocalMacWorkspace,
     isWindowsDesktop,
     remoteSessionId,
@@ -813,6 +817,26 @@ export function ComputerUseSection({
             </SettingsGroupCard>
           ) : null}
         </>
+      ) : null}
+
+      {/* Linux 桌面无需 TCC 权限，但需要 xdotool/scrot 系统依赖；启用时显示依赖提示。 */}
+      {cuaEnabled && supportsLocalLinuxWorkspace ? (
+        <SettingsGroupCard>
+          <SettingsRow
+            label={intl.formatMessage({ id: "settings.computerUse.linuxDeps.label" })}
+            description={intl.formatMessage({
+              id: "settings.computerUse.linuxDeps.description",
+            })}
+            control={
+              <StatusDot
+                tone="subtle"
+                aria-label={intl.formatMessage({
+                  id: "settings.computerUse.linuxDeps.label",
+                })}
+              />
+            }
+          />
+        </SettingsGroupCard>
       ) : null}
     </div>
   );

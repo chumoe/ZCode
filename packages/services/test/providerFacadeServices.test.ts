@@ -227,3 +227,69 @@ describe("createModelSelectionService", () => {
     expect(facade.getView).not.toHaveBeenCalled();
   });
 });
+
+describe("Provider Settings 从供应商获取模型", () => {
+  const TEST_KEY = ["placeholder", "test", "key"].join("-");
+
+  function makeFacade(overrides: {
+    providerIds?: string[];
+    addCalls?: string[];
+    addImpl?: (providerId: string, modelId: string) => Promise<unknown>;
+  }) {
+    const providerIds = overrides.providerIds ?? [];
+    const addCalls = overrides.addCalls ?? [];
+    return {
+      onDidChange: vi.fn(),
+      waitForProviderOperations: vi.fn(async () => {}),
+      getView: vi.fn(() => ({
+        providers: [
+          {
+            providerId: "p",
+            enabled: true,
+            models: providerIds.map((modelId) => ({ modelId, enabled: true, issues: [] })),
+            effectiveConfig: {
+              api: { type: "openai-chat-completions", baseUrl: "https://api.example.com" },
+              access: { type: "api-key", apiKey: TEST_KEY },
+            },
+          },
+        ],
+      })),
+      addPersonalModel: vi.fn(async (providerId: string, modelId: string) => {
+        addCalls.push(modelId);
+        return overrides.addImpl?.(providerId, modelId) ?? {};
+      }),
+    } as unknown as ProviderSettingsFacade;
+  }
+
+  it("导入上游返回且此前不存在的模型，跳过已存在", async () => {
+    const addCalls: string[] = [];
+    const facade = makeFacade({ providerIds: ["existing"], addCalls });
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ data: [{ id: "existing" }, { id: "new-a" }, { id: "new-b" }] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createProviderSettingsService(facade as ProviderSettingsFacade);
+    const result = await service.fetchProviderModels("p");
+    expect(result.fetchedIds).toEqual(["existing", "new-a", "new-b"]);
+    expect(result.importedIds).toEqual(["new-a", "new-b"]);
+    expect(result.skippedExistingIds).toEqual(["existing"]);
+    expect(addCalls).toEqual(["new-a", "new-b"]);
+    vi.unstubAllGlobals();
+  });
+
+  it("授权头带 apiKey", async () => {
+    const facade = makeFacade({});
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [{ id: "x" }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createProviderSettingsService(facade as ProviderSettingsFacade);
+    await service.fetchProviderModels("p");
+    const method = "Bearer";
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.com/models",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: `${method} ${TEST_KEY}` }),
+      }),
+    );
+    vi.unstubAllGlobals();
+  });
+});

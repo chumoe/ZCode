@@ -30,6 +30,7 @@ export const botProviders = [
   "feishu",
   "lark",
   "weixin",
+  "qq",
   "discord",
   "wecom",
 ] as const;
@@ -120,6 +121,7 @@ export interface BotConfig {
   webhookUrl?: string;
   webhookAuthHeaderName?: string;
   feishuAppId?: string;
+  qqAppId?: string;
   providerUserId?: string;
   displayName?: string;
   allowedWorkspaces: string[];
@@ -201,6 +203,8 @@ export interface BotState {
   telegramOffset?: number;
   weixinGetUpdatesBuf?: string;
   weixinActivatedAt?: number;
+  /** QQ 扫码登录只返回 AppID/AppSecret，不返回用户身份；首个私聊消息的发送者即默认主人。 */
+  qqActivatedAt?: number;
   /** 单聊绑定代际，阻止换绑后迟到事件恢复旧关联。 */
   privateBindingId?: string;
   /** iLink 登录返回机器人身份，单聊接收人来自已授权入站消息。 */
@@ -606,6 +610,8 @@ export interface BotOutboundMessage {
   botId: string;
   provider: BotProvider;
   providerUserId: string;
+  /** 出站目标会话类型；QQ/飞书等按群聊与私聊选择不同发送 API。 */
+  chatType?: "private" | "group";
   text: string;
   locale?: Locale;
   selection?: SelectionPrompt;
@@ -788,6 +794,7 @@ export const botConfigSchema = z
     webhookUrl: z.string().url().optional(),
     webhookAuthHeaderName: z.string().min(1).optional(),
     feishuAppId: z.string().min(1).optional(),
+    qqAppId: z.string().min(1).optional(),
     providerUserId: z.string().min(1).optional(),
     displayName: z.string().optional(),
     allowedWorkspaces: z.array(z.string().min(1)),
@@ -895,6 +902,7 @@ export const botsStateFileSchema = z
         telegramOffset: z.number().optional(),
         weixinGetUpdatesBuf: z.string().optional(),
         weixinActivatedAt: z.number().optional(),
+        qqActivatedAt: z.number().optional(),
         privateBindingId: z.string().min(1).optional(),
         privateRecipientId: z.string().min(1).optional(),
         updatedAt: z.number(),

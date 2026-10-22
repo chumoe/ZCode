@@ -1,8 +1,13 @@
 {
   "name": "@zcode/desktop",
+  "version": "1.0.3",
   "private": true,
   "description": "ZCode Desktop App",
-  "author": "ZCode",
+  "author": {
+    "name": "ZCode",
+    "email": "dev@zcode.dev"
+  },
+  "homepage": "https://zcode.dev",
   "type": "module",
   "main": "out/main/index.js",
   "imports": {

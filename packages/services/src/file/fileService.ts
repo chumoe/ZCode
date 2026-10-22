@@ -1,6 +1,6 @@
 /* eslint-disable max-lines */
 import type { Dirent } from "node:fs";
-import { mkdir, open, readFile, readdir, realpath, stat } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile, cp } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, join, relative, sep } from "node:path";
 import type {
@@ -637,6 +637,30 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
       content: string;
     }): Promise<void> {
       await writeWorkspaceFileSearchIgnore(params.rootPath, params.content);
+    },
+    async writeTextFile(params: {
+      path: string;
+      content: string;
+      encoding?: BufferEncoding;
+    }): Promise<void> {
+      const encoding = params.encoding ?? "utf-8";
+      const filePath = params.path;
+      // 原子写入：先写临时文件再 rename，避免写半截导致文件损坏
+      const tmpPath = filePath + ".zcode-tmp";
+      await writeFile(tmpPath, params.content, encoding);
+      await rename(tmpPath, filePath);
+    },
+    async copyItem(params: { sourcePath: string; targetPath: string }): Promise<void> {
+      await cp(params.sourcePath, params.targetPath, { recursive: true });
+    },
+    async moveItem(params: { sourcePath: string; targetPath: string }): Promise<void> {
+      await rename(params.sourcePath, params.targetPath);
+    },
+    async deleteItem(params: { path: string }): Promise<void> {
+      await rm(params.path, { recursive: true, force: true });
+    },
+    async createDirectory(params: { path: string }): Promise<void> {
+      await mkdir(params.path, { recursive: true });
     },
   };
 }
