@@ -12,12 +12,19 @@ import {
   PROMPT_MENTION_BASE_CLASS_NAME,
 } from "@/mentions/mentionChip.js";
 import { normalizePromptMentionDisplayLabel } from "@/mentions/promptMentionLabel.js";
-import type { MentionCategory, MentionItemData } from "@/mentions/mentionTypes.js";
+import type {
+  MentionCategory,
+  MentionItemData,
+} from "@/mentions/mentionTypes.js";
 import { decoratePromptMention } from "@/mentions/nodes/promptMentionDecoration.js";
 export * from "@/mentions/nodes/mentionIconDom.js";
 
 function displayLabel(payload: PromptMentionPayload): string {
-  const label = normalizePromptMentionDisplayLabel(payload.category, payload.label, payload.value);
+  const label = normalizePromptMentionDisplayLabel(
+    payload.category,
+    payload.label,
+    payload.value,
+  );
   return payload.category === "files"
     ? resolveFileDisplayDescriptor(
         payload.data?.path ?? payload.data?.relativePath ?? payload.value,
@@ -73,7 +80,9 @@ export class PromptMentionNode extends TextNode {
     );
   }
 
-  static importJSON(serializedNode: SerializedPromptMentionNode): PromptMentionNode {
+  static importJSON(
+    serializedNode: SerializedPromptMentionNode,
+  ): PromptMentionNode {
     const node = $createPromptMentionNode({
       id: serializedNode.mentionId,
       category: serializedNode.category,
@@ -102,7 +111,10 @@ export class PromptMentionNode extends TextNode {
 
   createDOM(config: EditorConfig): HTMLElement {
     const dom = super.createDOM(config);
-    const variantClassName = getPromptMentionVariantClassName(this.__category);
+    const variantClassName = getPromptMentionVariantClassName(
+      this.__category,
+      this.__data?.attachmentType,
+    );
     dom.className = `prompt-mention ${PROMPT_MENTION_BASE_CLASS_NAME} ${variantClassName}`;
     dom.setAttribute("data-mention-category", this.__category);
     dom.setAttribute("data-mention-id", this.__mentionId);
@@ -113,10 +125,20 @@ export class PromptMentionNode extends TextNode {
     return dom;
   }
 
-  updateDOM(prevNode: PromptMentionNode, dom: HTMLElement, config: EditorConfig): boolean {
+  updateDOM(
+    prevNode: PromptMentionNode,
+    dom: HTMLElement,
+    config: EditorConfig,
+  ): boolean {
     const shouldUpdate = super.updateDOM(prevNode as this, dom, config);
-    if (prevNode.__category !== this.__category) {
-      const variantClassName = getPromptMentionVariantClassName(this.__category);
+    if (
+      prevNode.__category !== this.__category ||
+      prevNode.__data?.attachmentType !== this.__data?.attachmentType
+    ) {
+      const variantClassName = getPromptMentionVariantClassName(
+        this.__category,
+        this.__data?.attachmentType,
+      );
       dom.className = `prompt-mention ${PROMPT_MENTION_BASE_CLASS_NAME} ${variantClassName}`;
       dom.setAttribute("data-mention-category", this.__category);
     }
@@ -185,7 +207,9 @@ export class PromptMentionNode extends TextNode {
   }
 }
 
-export function $createPromptMentionNode(payload: PromptMentionPayload): PromptMentionNode {
+export function $createPromptMentionNode(
+  payload: PromptMentionPayload,
+): PromptMentionNode {
   const node = new PromptMentionNode(payload);
   node.setMode("token");
   return $applyNodeReplacement(node);

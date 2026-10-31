@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clearConversationSelectionReferenceLimitReason,
   getConversationSelectionReferenceScope,
@@ -14,21 +14,28 @@ export function useConversationSelectionReferences(options: {
   sessionId: string | null;
   workspaceKey: string;
   draftScopeKey?: string;
+  /** 引用加入后回调（编辑器内 context chip 的视觉占位由调用方负责插入）。 */
+  onReferenceAdded?: (reference: ConversationSelectionReference) => void;
 }) {
-  const [references, setReferencesState] = useState<readonly ConversationSelectionReference[]>(() =>
+  const [references, setReferencesState] = useState<
+    readonly ConversationSelectionReference[]
+  >(() =>
     getConversationSelectionReferenceScope(
       options.sessionId,
       options.workspaceKey,
       options.draftScopeKey,
     ),
   );
-  const [limitReason, setLimitReason] = useState<ConversationSelectionLimitReason | null>(() =>
-    getConversationSelectionReferenceLimitReason(
-      options.sessionId,
-      options.workspaceKey,
-      options.draftScopeKey,
-    ),
-  );
+  const [limitReason, setLimitReason] =
+    useState<ConversationSelectionLimitReason | null>(() =>
+      getConversationSelectionReferenceLimitReason(
+        options.sessionId,
+        options.workspaceKey,
+        options.draftScopeKey,
+      ),
+    );
+  const onReferenceAddedRef = useRef(options.onReferenceAdded);
+  onReferenceAddedRef.current = options.onReferenceAdded;
 
   useEffect(() => {
     setReferencesState(
@@ -75,7 +82,8 @@ export function useConversationSelectionReferences(options: {
       if (
         event.detail.targetSessionId !== options.sessionId ||
         event.detail.workspaceKey !== options.workspaceKey ||
-        (options.sessionId === null && event.detail.draftScopeKey !== options.draftScopeKey)
+        (options.sessionId === null &&
+          event.detail.draftScopeKey !== options.draftScopeKey)
       ) {
         return;
       }
@@ -93,14 +101,24 @@ export function useConversationSelectionReferences(options: {
           options.draftScopeKey,
         ),
       );
+      // 只对实际新增（非重复）的引用触发编辑器 chip 插入，避免重复点击同一引用时反复插入。
+      if (event.detail.result?.ok && !event.detail.result.duplicate) {
+        onReferenceAddedRef.current?.(event.detail.reference);
+      }
     };
     window.addEventListener(getConversationSelectionAddEventName(), handleAdd);
-    return () => window.removeEventListener(getConversationSelectionAddEventName(), handleAdd);
+    return () =>
+      window.removeEventListener(
+        getConversationSelectionAddEventName(),
+        handleAdd,
+      );
   }, [options.sessionId, options.workspaceKey, options.draftScopeKey]);
 
   const removeReference = useCallback(
     (id: string) => {
-      setReferences((current) => current.filter((reference) => reference.id !== id));
+      setReferences((current) =>
+        current.filter((reference) => reference.id !== id),
+      );
       setLimitReason(null);
     },
     [setReferences],

@@ -20,17 +20,28 @@ import {
   ExternalLinkIcon,
   FileCode2Icon,
   CopyIcon,
+  PencilIcon,
+  XIcon,
+  CheckIcon,
 } from "lucide-react";
 import { nanoid } from "nanoid";
 import { Button } from "@/components/ui/button.js";
+import { Spinner } from "@/components/ui/spinner.js";
 import { toast } from "@/components/ui/toast.js";
 import { cn } from "@/components/lib/utils.js";
-import type { FileBinaryPreview, FileMediaPreview, FileTextSlice } from "@zcode/shared";
+import type {
+  FileBinaryPreview,
+  FileMediaPreview,
+  FileTextSlice,
+} from "@zcode/shared";
 import { TID_PREVIEW_PANE } from "@zcode/shared/test-ids";
 import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { usePptxFileWatch } from "@/hooks/usePptxFileWatch.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { usePdfViewerLabels, usePptxViewerLabels } from "@/hooks/usePreviewViewerLabels.js";
+import {
+  usePdfViewerLabels,
+  usePptxViewerLabels,
+} from "@/hooks/usePreviewViewerLabels.js";
 import {
   FILE_VIEWER_MAX_TEXT_BYTES,
   createDiffSourceFilePreviewSource,
@@ -43,9 +54,15 @@ import {
 } from "@/lib/codeViewer.js";
 import type { PdfViewerSource } from "@/components/ui/pdf-viewer.js";
 import { normalizeCodeViewerSource } from "@/lib/codeViewerSource.js";
-import { FileDisplayIcon, resolveFileDisplayDescriptor } from "@/lib/fileDisplay.js";
+import {
+  FileDisplayIcon,
+  resolveFileDisplayDescriptor,
+} from "@/lib/fileDisplay.js";
 import { getPathLeaf, isAbsoluteFilePath } from "@/lib/path.js";
-import { decodeBase64ToArrayBuffer, getOfficeFilePreviewKind } from "@/lib/officeFilePreview.js";
+import {
+  decodeBase64ToArrayBuffer,
+  getOfficeFilePreviewKind,
+} from "@/lib/officeFilePreview.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useFileContextActions } from "@/hooks/useFileContextActions.js";
 import { useWorkspaceOpenInEditorTarget } from "@/hooks/useWorkspaceOpenInEditorTarget.js";
@@ -115,7 +132,10 @@ function isMarkdownSource(source: CodeViewerSource): boolean {
 }
 
 function isSvgSource(source: CodeViewerSource): boolean {
-  return source.type === "text" && source.path?.toLowerCase().endsWith(".svg") === true;
+  return (
+    source.type === "text" &&
+    source.path?.toLowerCase().endsWith(".svg") === true
+  );
 }
 
 function isMarkdownFilePath(path?: string): boolean {
@@ -136,7 +156,9 @@ export function isPreviewPaneMissingFileError(error: unknown): boolean {
   }
 
   const message = error instanceof Error ? error.message : String(error);
-  return /\bENOENT\b/i.test(message) || /no such file or directory/i.test(message);
+  return (
+    /\bENOENT\b/i.test(message) || /no such file or directory/i.test(message)
+  );
 }
 
 export function shouldToastPptxReferenceFileMissing(
@@ -155,7 +177,10 @@ export function isPreviewPaneFileTooLargeError(error: unknown): boolean {
   return /file is too large to preview/i.test(message);
 }
 
-export function getPreviewPaneSafeErrorMessage(error: unknown, sourcePath: string): string {
+export function getPreviewPaneSafeErrorMessage(
+  error: unknown,
+  sourcePath: string,
+): string {
   const message = error instanceof Error ? error.message : String(error);
   if (!isAbsoluteFilePath(sourcePath)) {
     return message;
@@ -267,9 +292,15 @@ function PreviewPaneDeferredHeavyContent({ style }: { style?: CSSProperties }) {
         data-preview-pane-heavy-content-placeholder="true"
       >
         {PREVIEW_PANE_DEFERRED_PLACEHOLDER_LINE_WIDTHS.map((width, index) => (
-          <div key={`${width}-${index}`} className="flex h-4 shrink-0 items-center gap-2">
+          <div
+            key={`${width}-${index}`}
+            className="flex h-4 shrink-0 items-center gap-2"
+          >
             <span className="h-3 w-8 shrink-0 rounded-sm bg-surface" />
-            <span className="h-3 rounded-sm bg-surface-hover" style={{ width: `${width}%` }} />
+            <span
+              className="h-3 rounded-sm bg-surface-hover"
+              style={{ width: `${width}%` }}
+            />
           </div>
         ))}
       </div>
@@ -319,7 +350,9 @@ export function resolvePreviewPaneMediaSource(
 export function resolveMediaPlaybackErrorMessageId(
   code: number | undefined,
 ): "codeViewer.mediaUnsupported" | "codeViewer.mediaLoadFailed" {
-  return code === 3 || code === 4 ? "codeViewer.mediaUnsupported" : "codeViewer.mediaLoadFailed";
+  return code === 3 || code === 4
+    ? "codeViewer.mediaUnsupported"
+    : "codeViewer.mediaLoadFailed";
 }
 
 export function resolvePreviewPanePdfSource(
@@ -365,7 +398,9 @@ export function resolvePreviewPanePptxSource(
   };
 }
 
-export function shouldShowPreviewPaneHeaderDivider(source: CodeViewerSource | null): boolean {
+export function shouldShowPreviewPaneHeaderDivider(
+  source: CodeViewerSource | null,
+): boolean {
   return Boolean(
     resolvePreviewPanePdfSource(source) ||
     resolvePreviewPanePptxSource(source) ||
@@ -413,10 +448,12 @@ export function getPreviewPaneDisplayOptions(
 ) {
   const canToggleMarkdownView =
     source !== null &&
-    (isMarkdownSource(source) || (source.type === "file" && isMarkdownFilePath(source.path)));
+    (isMarkdownSource(source) ||
+      (source.type === "file" && isMarkdownFilePath(source.path)));
   const canToggleSvgView =
     source !== null &&
-    (isSvgSource(source) || (source.type === "file" && isSvgFilePath(source.path)));
+    (isSvgSource(source) ||
+      (source.type === "file" && isSvgFilePath(source.path)));
   const canToggleCodeWrap =
     isPlainCodeSource(source) ||
     (canToggleMarkdownView && viewModes.markdownViewMode === "code") ||
@@ -449,7 +486,8 @@ function buildCodeViewerBreadcrumb(
   }
 
   const normalizedSourcePath = sourcePath.replace(/\\/g, "/");
-  const normalizedWorkspacePath = workspacePath?.replace(/\\/g, "/").replace(/\/+$/, "") ?? null;
+  const normalizedWorkspacePath =
+    workspacePath?.replace(/\\/g, "/").replace(/\/+$/, "") ?? null;
   const sourceLeaf = getPathLeaf(sourcePath);
   const descriptor = resolveFileDisplayDescriptor(sourcePath);
   if (
@@ -491,12 +529,17 @@ export function resolvePreviewPaneImageFileReference(
   const workspaceIdentity = source?.workspaceIdentity?.trim();
   if (!source?.path || !sourceWorkspacePath) return undefined;
   const sourceWorkspaceKey = workspaceIdentity || sourceWorkspacePath;
-  const sourceIsRemote = Boolean(workspaceIdentity || source.workspaceRemoteSessionId);
+  const sourceIsRemote = Boolean(
+    workspaceIdentity || source.workspaceRemoteSessionId,
+  );
   const targetIsRemote = Boolean(
     workspacePath && targetWorkspaceKey && targetWorkspaceKey !== workspacePath,
   );
   // 本地文件沿用文件树的跨工作区绝对引用；远端必须匹配身份，不能把另一 Host 的 path 交给当前草稿。
-  if ((sourceIsRemote || targetIsRemote) && sourceWorkspaceKey !== targetWorkspaceKey)
+  if (
+    (sourceIsRemote || targetIsRemote) &&
+    sourceWorkspaceKey !== targetWorkspaceKey
+  )
     return undefined;
   return {
     type: "file",
@@ -533,7 +576,9 @@ export function PreviewPane({
   const platform = usePlatform();
   const { intl } = useZCodeIntl();
   const theme = useZCodeStore((state) => state.theme);
-  const codePreviewSettings = useZCodeStore((state) => state.codePreviewSettings);
+  const codePreviewSettings = useZCodeStore(
+    (state) => state.codePreviewSettings,
+  );
   const source = useMemo(
     () => (rawSource ? normalizeCodeViewerSource(rawSource) : null),
     [rawSource],
@@ -560,30 +605,40 @@ export function PreviewPane({
     matchedOpenContext.isRemoteWorkspace,
   );
   const fileActions = useFileContextActions();
-  const { fileService, fileWatcherService, mediaPreviewService } = useWorkspaceServices(
-    sourceWorkspacePath,
-    source?.workspaceRemoteSessionId,
-    source?.workspaceIdentity,
-  );
+  const { fileService, fileWatcherService, mediaPreviewService } =
+    useWorkspaceServices(
+      sourceWorkspacePath,
+      source?.workspaceRemoteSessionId,
+      source?.workspaceIdentity,
+    );
   const sourceFilePath = source?.path;
   const loadImageDownloadSource = useCallback(async () => {
     if (!sourceFilePath) throw new Error("Image source path is unavailable");
     // SVG 文本预览按 UTF-8 解码；下载必须从同一来源 Host 读取原字节，保留其他编码及 XML 声明。
-    const original = await fileService.readMediaPreview({ path: sourceFilePath });
+    const original = await fileService.readMediaPreview({
+      path: sourceFilePath,
+    });
     return `data:${original.mediaType};base64,${original.dataBase64}`;
   }, [fileService, sourceFilePath]);
   const [filePreview, setFilePreview] = useState<FileTextSlice | null>(null);
   const [fileTooLarge, setFileTooLarge] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editedContent, setEditedContent] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(false);
   const [loadingImagePreview, setLoadingImagePreview] = useState(false);
-  const [imagePreview, setImagePreview] = useState<FileMediaPreview | null>(null);
+  const [imagePreview, setImagePreview] = useState<FileMediaPreview | null>(
+    null,
+  );
   const [loadingMediaPreview, setLoadingMediaPreview] = useState(false);
   const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string | null>(null);
   const [mediaPreviewId, setMediaPreviewId] = useState<string | null>(null);
   const mediaPreviewGenerationRef = useRef(0);
   const mediaRefreshAttemptedRef = useRef(false);
   const mediaRefreshInFlightRef = useRef(false);
-  const mediaRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mediaRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const mediaPlaybackRestoreRef = useRef<{
     currentTime: number;
     paused: boolean;
@@ -591,15 +646,23 @@ export function PreviewPane({
     muted: boolean;
   } | null>(null);
   const [loadingPdfPreview, setLoadingPdfPreview] = useState(false);
-  const [pdfViewerSource, setPdfViewerSource] = useState<PdfViewerSource | null>(null);
-  const [officePreview, setOfficePreview] = useState<FileBinaryPreview | null>(null);
+  const [pdfViewerSource, setPdfViewerSource] =
+    useState<PdfViewerSource | null>(null);
+  const [officePreview, setOfficePreview] = useState<FileBinaryPreview | null>(
+    null,
+  );
   const [loadingOfficePreview, setLoadingOfficePreview] = useState(false);
   const [loadingPptxPreview, setLoadingPptxPreview] = useState(false);
-  const [pptxPreviewData, setPptxPreviewData] = useState<ArrayBuffer | null>(null);
-  const [validatedPptxReferenceNavigationRequestId, setValidatedPptxReferenceNavigationRequestId] =
-    useState<string | null>(null);
+  const [pptxPreviewData, setPptxPreviewData] = useState<ArrayBuffer | null>(
+    null,
+  );
+  const [
+    validatedPptxReferenceNavigationRequestId,
+    setValidatedPptxReferenceNavigationRequestId,
+  ] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const editorFilePath = source?.type !== "code-review" ? source?.path : undefined;
+  const editorFilePath =
+    source?.type !== "code-review" ? source?.path : undefined;
   const [installedEditorQuery, setInstalledEditorQuery] = useState<{
     path: string | undefined;
     editors: EditorInfo[];
@@ -607,14 +670,23 @@ export function PreviewPane({
   // 文件类型变化后不能沿用上一份应用列表；查询结果与路径绑定，旧请求由 effect 清理失效。
   const installedEditors = useMemo(
     () =>
-      installedEditorQuery?.path === editorFilePath ? (installedEditorQuery?.editors ?? []) : [],
+      installedEditorQuery?.path === editorFilePath
+        ? (installedEditorQuery?.editors ?? [])
+        : [],
     [installedEditorQuery, editorFilePath],
   );
-  const [preferredEditorId] = useState<string | null>(() => readLastSelectedEditorId());
-  const [markdownViewMode, setMarkdownViewMode] = useState<"preview" | "code">("preview");
+  const [preferredEditorId] = useState<string | null>(() =>
+    readLastSelectedEditorId(),
+  );
+  const [markdownViewMode, setMarkdownViewMode] = useState<"preview" | "code">(
+    "preview",
+  );
   const [svgViewMode, setSvgViewMode] = useState<"preview" | "code">("preview");
-  const [wrapLongLinesOverride, setWrapLongLinesOverride] = useState<boolean | null>(null);
-  const [breadcrumbMaskState, setBreadcrumbMaskState] = useState<BreadcrumbMaskState>("none");
+  const [wrapLongLinesOverride, setWrapLongLinesOverride] = useState<
+    boolean | null
+  >(null);
+  const [breadcrumbMaskState, setBreadcrumbMaskState] =
+    useState<BreadcrumbMaskState>("none");
   const breadcrumbScrollRef = useRef<HTMLDivElement | null>(null);
   const breadcrumbContentRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -625,22 +697,38 @@ export function PreviewPane({
   const previousRenderHeavyContentRef = useRef(renderHeavyContent);
   const resolvedTheme = resolveTheme(theme);
   const codeTheme =
-    resolvedTheme === "dark" ? codePreviewSettings.darkTheme : codePreviewSettings.lightTheme;
-  const imageSource = useMemo(() => resolvePreviewPaneImageSource(source), [source]);
-  const mediaSource = useMemo(() => resolvePreviewPaneMediaSource(source), [source]);
-  const pdfSource = useMemo(() => resolvePreviewPanePdfSource(source), [source]);
-  const officePreviewKind = useMemo(
-    () => (source?.type === "file" ? getOfficeFilePreviewKind(source.path) : null),
+    resolvedTheme === "dark"
+      ? codePreviewSettings.darkTheme
+      : codePreviewSettings.lightTheme;
+  const imageSource = useMemo(
+    () => resolvePreviewPaneImageSource(source),
     [source],
   );
-  const pptxSource = useMemo(() => resolvePreviewPanePptxSource(source), [source]);
+  const mediaSource = useMemo(
+    () => resolvePreviewPaneMediaSource(source),
+    [source],
+  );
+  const pdfSource = useMemo(
+    () => resolvePreviewPanePdfSource(source),
+    [source],
+  );
+  const officePreviewKind = useMemo(
+    () =>
+      source?.type === "file" ? getOfficeFilePreviewKind(source.path) : null,
+    [source],
+  );
+  const pptxSource = useMemo(
+    () => resolvePreviewPanePptxSource(source),
+    [source],
+  );
   const showDocumentHeaderDivider = shouldShowPreviewPaneHeaderDivider(source);
   const pptxSourcePath = pptxSource?.path ?? null;
   const pptxReferenceNavigation = pptxSource?.referenceNavigation ?? null;
-  const { ready: pptxFileWatchReady, reloadGeneration: pptxReloadGeneration } = usePptxFileWatch({
-    filePath: pptxSourcePath,
-    fileWatcherService,
-  });
+  const { ready: pptxFileWatchReady, reloadGeneration: pptxReloadGeneration } =
+    usePptxFileWatch({
+      filePath: pptxSourcePath,
+      fileWatcherService,
+    });
   const diffFilePreviewSource = useMemo(
     () =>
       source?.type === "patch" || source?.type === "multi-file-diff"
@@ -671,27 +759,43 @@ export function PreviewPane({
   const codeComments = useCodeCommentPreviewStore((state) =>
     // code-review 不读取 Composer 评论 store，但这里每次 selector 求值都不能返回新的 []，
     // 否则会破坏 useSyncExternalStore 的稳定 snapshot 契约并触发无限更新。
-    codeCommentBucket ? state.getComments(codeCommentBucket) : EMPTY_CODE_COMMENT_PREVIEWS,
+    codeCommentBucket
+      ? state.getComments(codeCommentBucket)
+      : EMPTY_CODE_COMMENT_PREVIEWS,
   );
-  const addCodeCommentPreview = useCodeCommentPreviewStore((state) => state.addComment);
-  const removeCodeCommentPreview = useCodeCommentPreviewStore((state) => state.removeComment);
+  const addCodeCommentPreview = useCodeCommentPreviewStore(
+    (state) => state.addComment,
+  );
+  const removeCodeCommentPreview = useCodeCommentPreviewStore(
+    (state) => state.removeComment,
+  );
   const breadcrumb = useMemo(
-    () => (source ? buildCodeViewerBreadcrumb(source, sourceWorkspacePath) : null),
+    () =>
+      source ? buildCodeViewerBreadcrumb(source, sourceWorkspacePath) : null,
     [source, sourceWorkspacePath],
   );
   const editorSelection = useMemo(
     () =>
       resolveWorkspaceEditorSelection({
-        installedEditors: isRemoteSource && !openInEditorRemoteTarget ? [] : installedEditors,
+        installedEditors:
+          isRemoteSource && !openInEditorRemoteTarget ? [] : installedEditors,
         selectedEditorId: preferredEditorId,
         remoteTarget: openInEditorRemoteTarget,
       }),
-    [installedEditors, isRemoteSource, openInEditorRemoteTarget, preferredEditorId],
+    [
+      installedEditors,
+      isRemoteSource,
+      openInEditorRemoteTarget,
+      preferredEditorId,
+    ],
   );
   const selectedEditor = editorSelection.selectedEditor;
   const canOpenInEditor = Boolean(source?.path && selectedEditor);
-  const canOpenDiffFilePreview = Boolean(diffFilePreviewSource && onOpenCodeViewer);
-  const wrapLongLines = wrapLongLinesOverride ?? codePreviewSettings.wrapLongLines;
+  const canOpenDiffFilePreview = Boolean(
+    diffFilePreviewSource && onOpenCodeViewer,
+  );
+  const wrapLongLines =
+    wrapLongLinesOverride ?? codePreviewSettings.wrapLongLines;
   const canCreateCodeComment = Boolean(
     source?.type !== "code-review" && source?.path && sourceWorkspacePath,
   );
@@ -703,8 +807,12 @@ export function PreviewPane({
       }),
     [markdownViewMode, source, svgViewMode],
   );
-  const { canToggleCodeWrap, canToggleMarkdownView, canToggleSvgView, hasMoreMenu } =
-    displayOptions;
+  const {
+    canToggleCodeWrap,
+    canToggleMarkdownView,
+    canToggleSvgView,
+    hasMoreMenu,
+  } = displayOptions;
   const codeCommentLabels = useMemo(
     () => ({
       addComment: intl.formatMessage({ id: "codeViewer.comment.add" }),
@@ -741,7 +849,10 @@ export function PreviewPane({
       })
       .catch((platformError) => {
         logger.warn("[PreviewPane] 获取已安装编辑器列表失败", {
-          error: platformError instanceof Error ? platformError.message : String(platformError),
+          error:
+            platformError instanceof Error
+              ? platformError.message
+              : String(platformError),
         });
       });
 
@@ -756,12 +867,14 @@ export function PreviewPane({
     }
 
     setMarkdownViewMode(
-      source.type !== "code-review" && (isMarkdownSource(source) || isMarkdownFilePath(source.path))
+      source.type !== "code-review" &&
+        (isMarkdownSource(source) || isMarkdownFilePath(source.path))
         ? "preview"
         : "code",
     );
     setSvgViewMode(
-      source.type !== "code-review" && (isSvgSource(source) || isSvgFilePath(source.path))
+      source.type !== "code-review" &&
+        (isSvgSource(source) || isSvgFilePath(source.path))
         ? "preview"
         : "code",
     );
@@ -769,7 +882,11 @@ export function PreviewPane({
   }, [source]);
 
   const handleSubmitCodeComment = useCallback(
-    (params: { range: CodeCommentRange; selectedText: string; comment: string }) => {
+    (params: {
+      range: CodeCommentRange;
+      selectedText: string;
+      comment: string;
+    }) => {
       if (!source?.path || !sourceWorkspacePath) {
         return;
       }
@@ -858,7 +975,10 @@ export function PreviewPane({
     // 交互说明：长路径首次打开时，用户最关心的是末尾文件名。
     // 这里在 breadcrumb 内容变更后只初始化滚到最右侧，后续用户手动滚动不再强行回弹。
     const frameId = requestAnimationFrame(() => {
-      viewport.scrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+      viewport.scrollLeft = Math.max(
+        0,
+        viewport.scrollWidth - viewport.clientWidth,
+      );
     });
 
     return () => {
@@ -942,6 +1062,9 @@ export function PreviewPane({
     };
     setFilePreview(null);
     setFileTooLarge(false);
+    setEditing(false);
+    setEditedContent(null);
+    setSaving(false);
     setError(null);
     setLoadingInitial(Boolean(fileSource));
     if (scrollContainerRef.current) {
@@ -977,7 +1100,10 @@ export function PreviewPane({
           return;
         }
 
-        logger.error(`[PreviewPane] 读取文件失败 path=${fileSource.path}:`, readError);
+        logger.error(
+          `[PreviewPane] 读取文件失败 path=${fileSource.path}:`,
+          readError,
+        );
         setError(
           isPreviewPaneMissingFileError(readError)
             ? intl.formatMessage({ id: "codeViewer.fileMissing" })
@@ -1026,7 +1152,10 @@ export function PreviewPane({
           return;
         }
 
-        logger.error(`[PreviewPane] 读取图片预览失败 path=${imageSource.path}:`, previewError);
+        logger.error(
+          `[PreviewPane] 读取图片预览失败 path=${imageSource.path}:`,
+          previewError,
+        );
         setError(
           isPreviewPaneMissingFileError(previewError)
             ? intl.formatMessage({ id: "codeViewer.fileMissing" })
@@ -1057,7 +1186,8 @@ export function PreviewPane({
       setMediaPreviewUrl(null);
       setMediaPreviewId(null);
       mediaRefreshAttemptedRef.current = false;
-      if (mediaRefreshTimerRef.current) clearTimeout(mediaRefreshTimerRef.current);
+      if (mediaRefreshTimerRef.current)
+        clearTimeout(mediaRefreshTimerRef.current);
       mediaRefreshTimerRef.current = null;
       mediaPlaybackRestoreRef.current = null;
       return () => {
@@ -1071,7 +1201,8 @@ export function PreviewPane({
     setError(null);
     mediaRefreshAttemptedRef.current = false;
     mediaRefreshInFlightRef.current = false;
-    if (mediaRefreshTimerRef.current) clearTimeout(mediaRefreshTimerRef.current);
+    if (mediaRefreshTimerRef.current)
+      clearTimeout(mediaRefreshTimerRef.current);
     mediaRefreshTimerRef.current = null;
     mediaPlaybackRestoreRef.current = null;
     if (!mediaPreviewService) {
@@ -1092,7 +1223,9 @@ export function PreviewPane({
         if (previewId) preparedPreviewId = previewId;
         if (disposed || generation !== mediaPreviewGenerationRef.current) {
           if (previewId && mediaPreviewService?.release) {
-            void mediaPreviewService.release({ previewId }).catch(() => undefined);
+            void mediaPreviewService
+              .release({ previewId })
+              .catch(() => undefined);
           }
           return;
         }
@@ -1109,10 +1242,14 @@ export function PreviewPane({
         }
       })
       .catch((previewError: unknown) => {
-        if (disposed || generation !== mediaPreviewGenerationRef.current) return;
+        if (disposed || generation !== mediaPreviewGenerationRef.current)
+          return;
         logger.error("[PreviewPane] 读取媒体预览失败", {
           path: mediaSource.path,
-          error: previewError instanceof Error ? previewError.message : String(previewError),
+          error:
+            previewError instanceof Error
+              ? previewError.message
+              : String(previewError),
         });
         setError(
           isPreviewPaneMissingFileError(previewError)
@@ -1131,10 +1268,13 @@ export function PreviewPane({
     return () => {
       disposed = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
-      if (mediaRefreshTimerRef.current) clearTimeout(mediaRefreshTimerRef.current);
+      if (mediaRefreshTimerRef.current)
+        clearTimeout(mediaRefreshTimerRef.current);
       mediaRefreshTimerRef.current = null;
       if (preparedPreviewId && mediaPreviewService?.release) {
-        void mediaPreviewService.release({ previewId: preparedPreviewId }).catch(() => undefined);
+        void mediaPreviewService
+          .release({ previewId: preparedPreviewId })
+          .catch(() => undefined);
       }
     };
   }, [intl, mediaPreviewService, mediaSource]);
@@ -1159,7 +1299,9 @@ export function PreviewPane({
       mediaRefreshAttemptedRef.current = true;
       const generation = mediaPreviewGenerationRef.current;
       mediaPlaybackRestoreRef.current = {
-        currentTime: Number.isFinite(mediaElement.currentTime) ? mediaElement.currentTime : 0,
+        currentTime: Number.isFinite(mediaElement.currentTime)
+          ? mediaElement.currentTime
+          : 0,
         paused: mediaElement.paused,
         volume: mediaElement.volume,
         muted: mediaElement.muted,
@@ -1171,11 +1313,14 @@ export function PreviewPane({
         mediaRefreshInFlightRef.current = true;
         void refreshPlaybackUrl({ previewId: mediaPreviewId })
           .then(({ url }) => {
-            if (generation === mediaPreviewGenerationRef.current) setMediaPreviewUrl(url);
+            if (generation === mediaPreviewGenerationRef.current)
+              setMediaPreviewUrl(url);
           })
           .catch(() => {
             if (generation === mediaPreviewGenerationRef.current) {
-              setError(intl.formatMessage({ id: "codeViewer.mediaLoadFailed" }));
+              setError(
+                intl.formatMessage({ id: "codeViewer.mediaLoadFailed" }),
+              );
             }
           })
           .finally(() => {
@@ -1186,20 +1331,23 @@ export function PreviewPane({
     [intl, mediaPreviewId, mediaPreviewService],
   );
 
-  const handleMediaLoadedMetadata = useCallback((event: SyntheticEvent<HTMLMediaElement>) => {
-    const restore = mediaPlaybackRestoreRef.current;
-    if (!restore) return;
-    const mediaElement = event.currentTarget;
-    mediaElement.volume = restore.volume;
-    mediaElement.muted = restore.muted;
-    try {
-      mediaElement.currentTime = restore.currentTime;
-    } catch {
-      // 媒体元数据尚未完全就绪时由浏览器稍后继续处理，不阻断播放器加载。
-    }
-    if (!restore.paused) void mediaElement.play().catch(() => undefined);
-    mediaPlaybackRestoreRef.current = null;
-  }, []);
+  const handleMediaLoadedMetadata = useCallback(
+    (event: SyntheticEvent<HTMLMediaElement>) => {
+      const restore = mediaPlaybackRestoreRef.current;
+      if (!restore) return;
+      const mediaElement = event.currentTarget;
+      mediaElement.volume = restore.volume;
+      mediaElement.muted = restore.muted;
+      try {
+        mediaElement.currentTime = restore.currentTime;
+      } catch {
+        // 媒体元数据尚未完全就绪时由浏览器稍后继续处理，不阻断播放器加载。
+      }
+      if (!restore.paused) void mediaElement.play().catch(() => undefined);
+      mediaPlaybackRestoreRef.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     let disposed = false;
@@ -1217,7 +1365,9 @@ export function PreviewPane({
     setError(null);
 
     const path = pdfSource.path;
-    const readWholeFile = async (totalBytes: number): Promise<Uint8Array | null> => {
+    const readWholeFile = async (
+      totalBytes: number,
+    ): Promise<Uint8Array | null> => {
       const chunks: Uint8Array[] = [];
       let offset = 0;
       while (offset < totalBytes) {
@@ -1273,7 +1423,8 @@ export function PreviewPane({
       const totalBytes = fileStat.size;
       setPdfViewerSource({
         totalBytes,
-        requestRange: (offset, length) => fileService.readFileRange({ path, offset, length }),
+        requestRange: (offset, length) =>
+          fileService.readFileRange({ path, offset, length }),
       });
     })()
       .catch((previewError: unknown) => {
@@ -1281,7 +1432,10 @@ export function PreviewPane({
           return;
         }
 
-        logger.error(`[PreviewPane] 读取 PDF 预览失败 path=${path}:`, previewError);
+        logger.error(
+          `[PreviewPane] 读取 PDF 预览失败 path=${path}:`,
+          previewError,
+        );
         setError(
           isPreviewPaneMissingFileError(previewError)
             ? intl.formatMessage({ id: "codeViewer.fileMissing" })
@@ -1330,7 +1484,10 @@ export function PreviewPane({
 
         logger.error("[PreviewPane] 读取 Office 文件预览失败", {
           path: source.path,
-          error: previewError instanceof Error ? previewError.message : String(previewError),
+          error:
+            previewError instanceof Error
+              ? previewError.message
+              : String(previewError),
         });
         setError(
           isPreviewPaneMissingFileError(previewError)
@@ -1369,7 +1526,10 @@ export function PreviewPane({
         }
       })
       .catch((navigationError: unknown) => {
-        if (!disposed && shouldToastPptxReferenceFileMissing(pptxSource, navigationError)) {
+        if (
+          !disposed &&
+          shouldToastPptxReferenceFileMissing(pptxSource, navigationError)
+        ) {
           toast(
             intl.formatMessage({
               id: "chat.pptxElements.previewFileMissing",
@@ -1429,7 +1589,8 @@ export function PreviewPane({
 
       const data = await readPptxPreviewData({
         fileSize: fileStat.size,
-        readRange: (offset, length) => fileService.readFileRange({ path, offset, length }),
+        readRange: (offset, length) =>
+          fileService.readFileRange({ path, offset, length }),
         isDisposed: () => disposed,
       });
       if (disposed || !data) {
@@ -1463,18 +1624,25 @@ export function PreviewPane({
             observedFileSize: previewError.observedFileSize,
           });
         } else {
-          logger.error(`[PreviewPane] 读取 PPTX 预览失败 path=${path}:`, previewError);
+          logger.error(
+            `[PreviewPane] 读取 PPTX 预览失败 path=${path}:`,
+            previewError,
+          );
         }
         // 旧 Host 的 8MB base64 通道会把绝对路径拼进英文超限错误；原样展示既误导
         // 用户又泄漏远端目录。这里保留真实的 8MB 兼容边界，并对其它错误只展示文件名。
         setError(
           resolvePptxPreviewReadErrorMessage(previewError, {
             sourcePath: path,
-            fileMissingMessage: intl.formatMessage({ id: "codeViewer.fileMissing" }),
+            fileMissingMessage: intl.formatMessage({
+              id: "codeViewer.fileMissing",
+            }),
             legacyFileTooLargeMessage: intl.formatMessage({
               id: "codeViewer.pptx.legacyFileTooLarge",
             }),
-            incompleteFileMessage: intl.formatMessage({ id: "codeViewer.pptx.incomplete" }),
+            incompleteFileMessage: intl.formatMessage({
+              id: "codeViewer.pptx.incomplete",
+            }),
           }),
         );
       })
@@ -1487,7 +1655,13 @@ export function PreviewPane({
     return () => {
       disposed = true;
     };
-  }, [fileService, intl, pptxFileWatchReady, pptxReloadGeneration, pptxSourcePath]);
+  }, [
+    fileService,
+    intl,
+    pptxFileWatchReady,
+    pptxReloadGeneration,
+    pptxSourcePath,
+  ]);
 
   const handlePreviewContentScroll = useCallback(() => {
     rememberScrollMetrics();
@@ -1547,11 +1721,15 @@ export function PreviewPane({
     try {
       // 远程能力过滤产生的 fallback 只用于本次打开；不能把它写回面板偏好，
       // 否则同一 PreviewPane 切回本地文件时仍会错误沿用远程 VS Code。
-      const result = await platform.openInEditor(selectedEditor.id, source.path, {
-        pathKind: "file",
-        remoteTarget: openInEditorRemoteTarget,
-        workspaceIdentity: source.workspaceIdentity,
-      });
+      const result = await platform.openInEditor(
+        selectedEditor.id,
+        source.path,
+        {
+          pathKind: "file",
+          remoteTarget: openInEditorRemoteTarget,
+          workspaceIdentity: source.workspaceIdentity,
+        },
+      );
       if (result.success) {
         return;
       }
@@ -1564,8 +1742,75 @@ export function PreviewPane({
     } catch (platformError) {
       logger.warn("[PreviewPane] 打开文件失败", {
         path: source.path,
-        error: platformError instanceof Error ? platformError.message : String(platformError),
+        error:
+          platformError instanceof Error
+            ? platformError.message
+            : String(platformError),
       });
+    }
+  };
+
+  // 内置编辑入口：仅文本文件、且已在预览中完整读出内容（非二进制/未截断）时可用。
+  // 与"用外部编辑器打开"并存：内置编辑器适合轻量改动，大文件仍建议走外部编辑器。
+  const canEditInline =
+    source.type === "file" &&
+    Boolean(filePreview) &&
+    !fileTooLarge &&
+    !filePreview?.isBinary &&
+    !saving;
+
+  const handleStartEdit = () => {
+    if (!canEditInline || !filePreview) return;
+    setEditedContent(filePreview.content);
+    setEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditing(false);
+    setEditedContent(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!source.path || editedContent === null || saving) return;
+    setSaving(true);
+    try {
+      await fileService.writeTextFile({
+        path: source.path,
+        content: editedContent,
+      });
+      setEditing(false);
+      setEditedContent(null);
+      // 保存后重新读取，让只读预览显示最新内容（与文件变化自动刷新同源）。
+      if (fileSource) {
+        const refreshed = await fileService.readTextFile({
+          path: fileSource.path,
+          offset: 0,
+          length: FILE_VIEWER_MAX_TEXT_BYTES,
+        });
+        const nextFileState = resolvePreviewPaneTextFileResult(refreshed);
+        setFilePreview(nextFileState.filePreview);
+        setFileTooLarge(nextFileState.fileTooLarge);
+      }
+      toast(
+        intl.formatMessage(
+          { id: "fileActions.saveSuccess" },
+          { path: getPathLeaf(source.path) },
+        ),
+      );
+    } catch (saveError) {
+      logger.warn("[PreviewPane] 保存文件失败", {
+        path: source.path,
+        error:
+          saveError instanceof Error ? saveError.message : String(saveError),
+      });
+      toast(
+        intl.formatMessage(
+          { id: "fileActions.saveError" },
+          { path: getPathLeaf(source.path) },
+        ),
+      );
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1589,7 +1834,9 @@ export function PreviewPane({
       className={cn(
         "flex h-10 min-w-0 shrink-0 items-center gap-2",
         !headerContainer && "bg-surface/30",
-        !headerContainer && showDocumentHeaderDivider && "border-b border-border",
+        !headerContainer &&
+          showDocumentHeaderDivider &&
+          "border-b border-border",
       )}
     >
       <div
@@ -1604,7 +1851,9 @@ export function PreviewPane({
           className="flex min-w-max items-center px-3 gap-0.5 text-ui-base text-foreground-subtle"
         >
           {breadcrumb?.rootLabel ? (
-            <span className="shrink-0 text-foreground-subtle">{breadcrumb.rootLabel}</span>
+            <span className="shrink-0 text-foreground-subtle">
+              {breadcrumb.rootLabel}
+            </span>
           ) : null}
           {breadcrumb?.rootLabel ? (
             <ChevronRightIcon className="size-3.5 shrink-0 text-foreground-subtlest" />
@@ -1618,9 +1867,15 @@ export function PreviewPane({
 
           <span className="inline-flex min-w-0 items-center gap-1 text-foreground">
             {breadcrumb?.fileIconSrc ? (
-              <FileDisplayIcon src={breadcrumb.fileIconSrc} size={14} className="shrink-0" />
+              <FileDisplayIcon
+                src={breadcrumb.fileIconSrc}
+                size={14}
+                className="shrink-0"
+              />
             ) : null}
-            <span className="truncate">{breadcrumb?.fileLabel ?? source.title}</span>
+            <span className="truncate">
+              {breadcrumb?.fileLabel ?? source.title}
+            </span>
           </span>
         </div>
       </div>
@@ -1716,7 +1971,9 @@ export function PreviewPane({
               ) : null}
               {canToggleCodeWrap ? (
                 <>
-                  {canToggleMarkdownView || canToggleSvgView ? <DropdownMenuSeparator /> : null}
+                  {canToggleMarkdownView || canToggleSvgView ? (
+                    <DropdownMenuSeparator />
+                  ) : null}
                   <DropdownMenuCheckboxItem
                     checked={wrapLongLines}
                     onCheckedChange={(checked) => {
@@ -1732,7 +1989,9 @@ export function PreviewPane({
                 <>
                   {hasMoreMenu ? <DropdownMenuSeparator /> : null}
                   <DropdownMenuItem
-                    onSelect={() => void fileActions.copyAbsolutePath({ path: source.path! })}
+                    onSelect={() =>
+                      void fileActions.copyAbsolutePath({ path: source.path! })
+                    }
                   >
                     <CopyIcon className="size-4" />
                     {intl.formatMessage({ id: "fileActions.copyAbsolutePath" })}
@@ -1742,7 +2001,10 @@ export function PreviewPane({
                       void fileActions.copyRelativePath({
                         path: source.path!,
                         relativePath: sourceWorkspacePath
-                          ? getWorkspaceFileRelativePath(sourceWorkspacePath, source.path!)
+                          ? getWorkspaceFileRelativePath(
+                              sourceWorkspacePath,
+                              source.path!,
+                            )
                           : source.path!,
                       })
                     }
@@ -1784,6 +2046,55 @@ export function PreviewPane({
         >
           <ExternalLinkIcon className="size-3.5" />
         </Button>
+        {canEditInline || editing ? (
+          editing ? (
+            <>
+              <Button
+                type="button"
+                size="icon-md"
+                variant="ghost"
+                className="shrink-0 text-foreground-subtle hover:text-foreground disabled:text-foreground-subtlest"
+                onClick={() => void handleSaveEdit()}
+                disabled={saving}
+                title={intl.formatMessage({ id: "fileActions.save" })}
+                aria-label={intl.formatMessage({ id: "fileActions.save" })}
+              >
+                {saving ? (
+                  <Spinner className="size-3.5" />
+                ) : (
+                  <CheckIcon className="size-3.5" />
+                )}
+              </Button>
+              <Button
+                type="button"
+                size="icon-md"
+                variant="ghost"
+                className="shrink-0 text-foreground-subtle hover:text-foreground disabled:text-foreground-subtlest"
+                onClick={handleCancelEdit}
+                disabled={saving}
+                title={intl.formatMessage({ id: "fileActions.cancelEdit" })}
+                aria-label={intl.formatMessage({
+                  id: "fileActions.cancelEdit",
+                })}
+              >
+                <XIcon className="size-3.5" />
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              size="icon-md"
+              variant="ghost"
+              className="shrink-0 text-foreground-subtle hover:text-foreground disabled:text-foreground-subtlest"
+              onClick={handleStartEdit}
+              disabled={!canEditInline}
+              title={intl.formatMessage({ id: "fileActions.edit" })}
+              aria-label={intl.formatMessage({ id: "fileActions.edit" })}
+            >
+              <PencilIcon className="size-3.5" />
+            </Button>
+          )
+        ) : null}
       </div>
     </div>
   );
@@ -1797,14 +2108,18 @@ export function PreviewPane({
       <div className="min-h-0 flex-1">
         {renderHeavyContent ? (
           <PreviewPaneContent
-            source={pptxSource ?? imageSource ?? pdfSource ?? mediaSource ?? source}
+            source={
+              pptxSource ?? imageSource ?? pdfSource ?? mediaSource ?? source
+            }
             filePreview={filePreview}
             fileTooLarge={fileTooLarge}
             loadingInitial={loadingInitial}
             loadingImagePreview={loadingImagePreview}
             imagePreview={imagePreview}
             imageFileReference={imageFileReference}
-            loadImageDownloadSource={sourceFilePath ? loadImageDownloadSource : undefined}
+            loadImageDownloadSource={
+              sourceFilePath ? loadImageDownloadSource : undefined
+            }
             mediaSource={mediaSource}
             loadingMediaPreview={loadingMediaPreview}
             mediaPreviewUrl={mediaPreviewUrl}
@@ -1837,7 +2152,8 @@ export function PreviewPane({
             pptxReferenceNavigation={pptxReferenceNavigation}
             pptxReferenceNavigationReady={
               pptxReferenceNavigation !== null &&
-              validatedPptxReferenceNavigationRequestId === pptxReferenceNavigation.requestId
+              validatedPptxReferenceNavigationRequestId ===
+                pptxReferenceNavigation.requestId
             }
             error={error}
             codePreviewSettings={codePreviewSettings}
@@ -1853,8 +2169,8 @@ export function PreviewPane({
                 ? markdownSelectionTarget
                 : undefined
             }
-            markdownViewMode={markdownViewMode}
-            svgViewMode={svgViewMode}
+            markdownViewMode={editing ? "code" : markdownViewMode}
+            svgViewMode={editing ? "code" : svgViewMode}
             wrapLongLines={wrapLongLines}
             codeComments={codeComments}
             enableCodeLineSelection={canCreateCodeComment}
@@ -1862,6 +2178,10 @@ export function PreviewPane({
             codeCommentLabels={codeCommentLabels}
             onSubmitCodeComment={handleSubmitCodeComment}
             onDeleteCodeComment={handleDeleteCodeComment}
+            // 内置编辑模式：仅在文本文件完整读出后由编辑按钮激活。
+            editable={editing}
+            onCodeChange={setEditedContent}
+            onSave={() => void handleSaveEdit()}
             // PreviewPane 外层只是 flex 壳，真实滚动发生在具体内容组件的 overflow 容器。
             // 折叠侧边面板卸载重内容前必须保存该容器的位置。
             onScroll={handlePreviewContentScroll}

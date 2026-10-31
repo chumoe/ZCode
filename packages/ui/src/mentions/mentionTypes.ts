@@ -16,7 +16,12 @@ export type AttachmentChipType =
   | "web-element"
   | "clipboard-text";
 
-export type ContextChipType = "code-comment" | "pptx" | "conversation-selection";
+export type ContextChipType =
+  | "code-comment"
+  | "pptx"
+  | "conversation-selection"
+  | "web-element"
+  | "plugin-ui";
 
 export interface MentionItemData {
   kind?: "file" | "directory" | "whiteboard";

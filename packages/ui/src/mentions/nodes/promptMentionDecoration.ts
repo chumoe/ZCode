@@ -5,7 +5,10 @@ import {
   resolveFileDisplayDescriptor,
 } from "@/lib/fileDisplay.js";
 import { resolvePluginIconSource } from "@/lib/pluginIconSource.js";
-import type { MentionCategory, MentionItemData } from "@/mentions/mentionTypes.js";
+import type {
+  MentionCategory,
+  MentionItemData,
+} from "@/mentions/mentionTypes.js";
 import {
   COMMAND_MENTION_ICON_NODE,
   COMPACT_COMMAND_MENTION_ICON_NODE,
@@ -79,11 +82,19 @@ export function decoratePromptMention(
     return;
   }
   if (category === "files") {
-    const descriptor = resolveFileDisplayDescriptor(data?.path ?? data?.relativePath ?? value);
-    const url = data?.kind === "directory" ? FOLDER_FILE_ICON_SRC : descriptor.fileIconSrc;
+    const descriptor = resolveFileDisplayDescriptor(
+      data?.path ?? data?.relativePath ?? value,
+    );
+    const url =
+      data?.kind === "directory"
+        ? FOLDER_FILE_ICON_SRC
+        : descriptor.fileIconSrc;
     setImage(dom, url, () =>
       setImage(dom, DOCUMENT_FILE_ICON_SRC, () => {
-        dom.style.setProperty("--mention-image", cssUrl(INLINE_FALLBACK_FILE_ICON_SRC));
+        dom.style.setProperty(
+          "--mention-image",
+          cssUrl(INLINE_FALLBACK_FILE_ICON_SRC),
+        );
       }),
     );
     return;
@@ -110,7 +121,11 @@ export function decoratePromptMention(
           ? PPTX_ICON_NODE
           : attachmentType === "conversation-selection"
             ? CONVERSATION_SELECTION_ICON_NODE
-            : CODE_COMMENT_ICON_NODE;
+            : attachmentType === "web-element"
+              ? WEB_ELEMENT_ICON_NODE
+              : attachmentType === "plugin-ui"
+                ? PLUGIN_MENTION_ICON_NODE
+                : CODE_COMMENT_ICON_NODE;
     setMask(dom, icon);
     return;
   }

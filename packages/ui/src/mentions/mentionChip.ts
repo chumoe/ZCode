@@ -1,11 +1,26 @@
-import type { MentionCategory } from "@/mentions/mentionTypes.js";
+import type {
+  MentionCategory,
+  MentionItemData,
+} from "@/mentions/mentionTypes.js";
 
 export const PROMPT_MENTION_BASE_CLASS_NAME =
   // inline-flex token 用 align-middle 会按父文本基线 + x-height 对齐，不是和行盒视觉中心对齐。
   // 在输入框里 token 后继续输入正文时会低约 1px；align-top 让同 line-height 的 token 和正文共用行盒顶部基准。
   "inline-flex cursor-default items-center gap-1 align-top text-ui-base leading-5 font-medium";
 
-export function getPromptMentionVariantClassName(category: MentionCategory): string {
+/** context 子类型 → 前景色类名。5 类上下文各用独立色相，便于在聊天内容里一眼区分来源。 */
+const CONTEXT_VARIANT_CLASS_BY_TYPE: Record<string, string> = {
+  "web-element": "text-web-element-node-foreground",
+  "code-comment": "text-code-comment-node-foreground",
+  "conversation-selection": "text-conversation-selection-node-foreground",
+  pptx: "text-pptx-node-foreground",
+  "plugin-ui": "text-plugin-ui-node-foreground",
+};
+
+export function getPromptMentionVariantClassName(
+  category: MentionCategory,
+  attachmentType?: MentionItemData["attachmentType"],
+): string {
   if (category === "skills") {
     return "text-skill-node-foreground";
   }
@@ -28,7 +43,10 @@ export function getPromptMentionVariantClassName(category: MentionCategory): str
     return "text-attachment-node-foreground";
   }
   if (category === "contexts") {
-    return "text-context-node-foreground";
+    return (
+      (attachmentType && CONTEXT_VARIANT_CLASS_BY_TYPE[attachmentType]) ??
+      "text-context-node-foreground"
+    );
   }
   return "text-file-node-foreground";
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   WEB_ELEMENT_CONTEXT_ADD_TO_CHAT_EVENT,
   WEB_ELEMENT_CONTEXT_REMOVE_FROM_CHAT_EVENT,
@@ -21,6 +21,8 @@ export interface UseWebElementContextsOptions {
   workspaceIdentity?: string;
   listenAddToChatEvents?: boolean;
   scopeId?: string | null;
+  /** 上下文加入后回调（编辑器内 context chip 的视觉占位由调用方负责插入）。 */
+  onContextAdded?: (context: WebElementContextComposerAttachment) => void;
 }
 
 export interface UseWebElementContextsResult {
@@ -30,7 +32,9 @@ export interface UseWebElementContextsResult {
   clearContexts: () => void;
 }
 
-function isRemovePayload(payload: unknown): payload is WebElementContextRemovePayload {
+function isRemovePayload(
+  payload: unknown,
+): payload is WebElementContextRemovePayload {
   const candidate = payload as WebElementContextRemovePayload;
   return (
     typeof payload === "object" &&
@@ -39,7 +43,8 @@ function isRemovePayload(payload: unknown): payload is WebElementContextRemovePa
     candidate.id.length > 0 &&
     typeof candidate.workspacePath === "string" &&
     candidate.workspacePath.length > 0 &&
-    (candidate.workspaceIdentity === undefined || typeof candidate.workspaceIdentity === "string")
+    (candidate.workspaceIdentity === undefined ||
+      typeof candidate.workspaceIdentity === "string")
   );
 }
 
@@ -60,9 +65,19 @@ export function useWebElementContexts({
   workspaceIdentity,
   listenAddToChatEvents = true,
   scopeId = null,
+  onContextAdded,
 }: UseWebElementContextsOptions): UseWebElementContextsResult {
-  const [contexts, setContexts] = useState<readonly WebElementContextComposerAttachment[]>([]);
-  const workspaceKey = getWebElementContextWorkspaceKey(workspacePath, workspaceIdentity);
+  const [contexts, setContexts] = useState<
+    readonly WebElementContextComposerAttachment[]
+  >([]);
+  const workspaceKey = getWebElementContextWorkspaceKey(
+    workspacePath,
+    workspaceIdentity,
+  );
+  const onContextAddedRef = useRef(onContextAdded);
+  onContextAddedRef.current = onContextAdded;
+  const contextsRef = useRef(contexts);
+  contextsRef.current = contexts;
 
   useEffect(() => {
     setContexts([]);
@@ -97,13 +112,24 @@ export function useWebElementContexts({
         return;
       }
       event.preventDefault();
+      // 读取当前 state 判断是否新增；updater 必须保持纯函数，回调放到 updater 外触发，
+      // 避免 React StrictMode 下 updater 双执行导致同一 context 插入两次编辑器 chip。
+      const existing = contextsRef.current.some(
+        (item) => item.id === attachment.id,
+      );
       setContexts((items) => {
-        const existingIndex = items.findIndex((item) => item.id === attachment.id);
-        if (existingIndex < 0) {
-          return [...items, attachment];
-        }
-        return items.map((item) => (item.id === attachment.id ? attachment : item));
+        const existingIndex = items.findIndex(
+          (item) => item.id === attachment.id,
+        );
+        return existingIndex < 0
+          ? [...items, attachment]
+          : items.map((item) =>
+              item.id === attachment.id ? attachment : item,
+            );
       });
+      if (!existing) {
+        onContextAddedRef.current?.(attachment);
+      }
     };
 
     const handleRemove = (event: Event) => {
@@ -125,10 +151,19 @@ export function useWebElementContexts({
     };
 
     window.addEventListener(WEB_ELEMENT_CONTEXT_ADD_TO_CHAT_EVENT, handleAdd);
-    window.addEventListener(WEB_ELEMENT_CONTEXT_REMOVE_FROM_CHAT_EVENT, handleRemove);
+    window.addEventListener(
+      WEB_ELEMENT_CONTEXT_REMOVE_FROM_CHAT_EVENT,
+      handleRemove,
+    );
     return () => {
-      window.removeEventListener(WEB_ELEMENT_CONTEXT_ADD_TO_CHAT_EVENT, handleAdd);
-      window.removeEventListener(WEB_ELEMENT_CONTEXT_REMOVE_FROM_CHAT_EVENT, handleRemove);
+      window.removeEventListener(
+        WEB_ELEMENT_CONTEXT_ADD_TO_CHAT_EVENT,
+        handleAdd,
+      );
+      window.removeEventListener(
+        WEB_ELEMENT_CONTEXT_REMOVE_FROM_CHAT_EVENT,
+        handleRemove,
+      );
     };
   }, [listenAddToChatEvents, removeContext, workspaceKey]);
 

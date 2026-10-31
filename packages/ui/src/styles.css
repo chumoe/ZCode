@@ -144,8 +144,9 @@ html[data-document-hidden] *::after {
   /* 修复原因：Windows 的 Consolas 不含中文字形，Tailwind 默认栈最终会让中文落到宋体。
    * 保留各平台西文等宽字体，并在通用 monospace 前显式加入各平台 CJK 无衬线字体。 */
   --font-mono:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-    "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace;
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC",
+    "Noto Sans CJK SC", monospace;
   /* 设置页直接恢复通用大字号会绕过 UI 字号体系；专用 token 保留默认 24px / 30px，并跟随界面字号缩放。 */
   --text-ui-settings-title: calc(var(--ui-font-size) + 10px);
   --text-ui-settings-title--line-height: calc(4 / 3);
@@ -167,7 +168,11 @@ html[data-document-hidden] *::after {
   --animated-gradient-text-strong: rgba(10, 10, 10, 1);
   --animated-gradient-text-soft: rgba(10, 10, 10, 0.22);
   --color-background: var(--color-neutral-50);
-  --color-background-alt: color-mix(in oklab, var(--color-neutral-100) 60%, transparent);
+  --color-background-alt: color-mix(
+    in oklab,
+    var(--color-neutral-100) 60%,
+    transparent
+  );
   --color-background-win-alt: var(--color-neutral-200);
   --color-brand: var(--color-sky-400);
   --color-resize-handle: var(--color-sky-500);
@@ -180,21 +185,53 @@ html[data-document-hidden] *::after {
   --color-trajectory-tool-result: #0284c7;
   /* 工作流因果图仪表化渲染（docs/dynamic-workflow/presentation.md）：
    * rule 比 --color-border 更弱——刻度与空闲轨道每图重复约 40 次，10% 会积成灰雾。 */
-  --color-workflow-rule: color-mix(in oklab, var(--color-neutral-950) 5.5%, transparent);
-  --color-workflow-trace: color-mix(in oklab, var(--color-neutral-950) 30%, transparent);
-  --color-workflow-trace-strong: color-mix(in oklab, var(--color-neutral-950) 55%, transparent);
+  --color-workflow-rule: color-mix(
+    in oklab,
+    var(--color-neutral-950) 5.5%,
+    transparent
+  );
+  --color-workflow-trace: color-mix(
+    in oklab,
+    var(--color-neutral-950) 30%,
+    transparent
+  );
+  --color-workflow-trace-strong: color-mix(
+    in oklab,
+    var(--color-neutral-950) 55%,
+    transparent
+  );
   --color-accent: var(--color-sky-50);
   --color-find-highlight: #fde68a;
   --color-find-highlight-active: #facc15;
-  --color-border: color-mix(in oklab, var(--color-neutral-950) 10%, transparent);
-  --color-border-hover: color-mix(in oklab, var(--color-neutral-950) 20%, transparent);
+  --color-border: color-mix(
+    in oklab,
+    var(--color-neutral-950) 10%,
+    transparent
+  );
+  --color-border-hover: color-mix(
+    in oklab,
+    var(--color-neutral-950) 20%,
+    transparent
+  );
   --color-hover: var(--color-neutral-200);
-  --color-selected: color-mix(in oklab, var(--color-neutral-950) 10%, transparent);
+  --color-selected: color-mix(
+    in oklab,
+    var(--color-neutral-950) 10%,
+    transparent
+  );
   --color-header: var(--color-neutral-100);
   --color-panel: var(--color-neutral-100);
   --color-sidebar: var(--color-neutral-100);
-  --color-surface: color-mix(in oklab, var(--color-neutral-950) 3%, transparent);
-  --color-surface-hover: color-mix(in oklab, var(--color-neutral-950) 5%, transparent);
+  --color-surface: color-mix(
+    in oklab,
+    var(--color-neutral-950) 3%,
+    transparent
+  );
+  --color-surface-hover: color-mix(
+    in oklab,
+    var(--color-neutral-950) 5%,
+    transparent
+  );
   --color-markdown-inline-code: var(--color-tag);
   --color-card: var(--color-white);
   --color-card-selected: var(--color-neutral-200);
@@ -213,8 +250,16 @@ html[data-document-hidden] *::after {
   --color-terminal-fg: var(--color-neutral-950);
   --color-terminal-cursor: var(--color-neutral-950);
   --color-terminal-cursor-accent: var(--color-neutral-50);
-  --color-terminal-selection: color-mix(in oklab, var(--color-sky-500) 32%, transparent);
-  --color-terminal-selection-inactive: color-mix(in oklab, var(--color-sky-500) 22%, transparent);
+  --color-terminal-selection: color-mix(
+    in oklab,
+    var(--color-sky-500) 32%,
+    transparent
+  );
+  --color-terminal-selection-inactive: color-mix(
+    in oklab,
+    var(--color-sky-500) 22%,
+    transparent
+  );
   --color-terminal-black: var(--color-neutral-700);
   --color-terminal-red: var(--color-red-500);
   --color-terminal-green: var(--color-green-500);
@@ -245,13 +290,37 @@ html[data-document-hidden] *::after {
   --color-context-breakdown-4: var(--color-sky-300);
   --color-context-breakdown-5: var(--color-sky-200);
   --color-context-breakdown-6: var(--color-sky-100);
-  --color-context-breakdown-7: color-mix(in oklab, var(--color-sky-100) 72%, var(--color-white));
+  --color-context-breakdown-7: color-mix(
+    in oklab,
+    var(--color-sky-100) 72%,
+    var(--color-white)
+  );
   /* Bugfix: 热力图之前复用 brand 色，Zai 主题下 brand 是黑/白，无法保持 sky 语义。 */
-  --color-usage-heatmap-0: color-mix(in oklab, var(--color-sky-500) 0%, var(--color-surface));
-  --color-usage-heatmap-1: color-mix(in oklab, var(--color-sky-500) 18%, var(--color-surface));
-  --color-usage-heatmap-2: color-mix(in oklab, var(--color-sky-500) 36%, var(--color-surface));
-  --color-usage-heatmap-3: color-mix(in oklab, var(--color-sky-600) 58%, var(--color-surface));
-  --color-usage-heatmap-4: color-mix(in oklab, var(--color-sky-700) 82%, var(--color-surface));
+  --color-usage-heatmap-0: color-mix(
+    in oklab,
+    var(--color-sky-500) 0%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-1: color-mix(
+    in oklab,
+    var(--color-sky-500) 18%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-2: color-mix(
+    in oklab,
+    var(--color-sky-500) 36%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-3: color-mix(
+    in oklab,
+    var(--color-sky-600) 58%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-4: color-mix(
+    in oklab,
+    var(--color-sky-700) 82%,
+    var(--color-surface)
+  );
   --color-tab: var(--color-neutral-100);
   --color-tab-active: var(--color-white);
   --color-tab-border: var(--color-border);
@@ -262,7 +331,11 @@ html[data-document-hidden] *::after {
   --color-secondary: var(--color-neutral-300);
   --color-interaction-ask-surface: var(--color-sky-50);
   --color-interaction-ask-foreground: var(--color-sky-700);
-  --color-interaction-ask-fill: color-mix(in oklab, var(--color-green-500) 20%, transparent);
+  --color-interaction-ask-fill: color-mix(
+    in oklab,
+    var(--color-green-500) 20%,
+    transparent
+  );
   --color-interaction-confirmation-surface: var(--color-green-50);
   --color-interaction-confirmation-foreground: var(--color-green-700);
   --color-success-surface: var(--color-green-50);
@@ -270,9 +343,17 @@ html[data-document-hidden] *::after {
   --color-progress-surface: var(--color-blue-50);
   --color-progress-surface-foreground: var(--color-blue-700);
   --color-foreground: var(--color-neutral-700);
-  --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-700) 60%, transparent);
+  --color-foreground-subtle: color-mix(
+    in oklab,
+    var(--color-neutral-700) 60%,
+    transparent
+  );
   --color-remote-foreground-muted: #595959;
-  --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-700) 40%, transparent);
+  --color-foreground-subtlest: color-mix(
+    in oklab,
+    var(--color-neutral-700) 40%,
+    transparent
+  );
   --lucide-subtlest-opacity: 0.4;
   --color-foreground-inverse: var(--color-white);
   --color-success: var(--color-green-600);
@@ -284,9 +365,17 @@ html[data-document-hidden] *::after {
   --color-warning: var(--color-yellow-600);
   --color-feedback-privacy-hint: var(--color-yellow-600);
   --color-warning-foreground: var(--color-foreground-inverse);
-  --color-warning-surface: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  --color-warning-surface: color-mix(
+    in srgb,
+    var(--color-warning) 12%,
+    transparent
+  );
   --color-warning-surface-foreground: var(--color-yellow-800);
-  --color-destructive-surface: color-mix(in srgb, var(--color-destructive) 10%, transparent);
+  --color-destructive-surface: color-mix(
+    in srgb,
+    var(--color-destructive) 10%,
+    transparent
+  );
   --color-destructive-surface-foreground: var(--color-red-800);
   --color-diff-added: var(--color-green-600);
   --color-diff-added-foreground: var(--color-foreground-inverse);
@@ -304,7 +393,11 @@ html[data-document-hidden] *::after {
   --color-tooltip: var(--color-neutral-100);
   --color-tooltip-foreground: var(--color-neutral-950);
   --color-tooltip-tag: var(--color-neutral-200);
-  --color-tooltip-tag-foreground: color-mix(in oklab, var(--color-neutral-950) 60%, transparent);
+  --color-tooltip-tag-foreground: color-mix(
+    in oklab,
+    var(--color-neutral-950) 60%,
+    transparent
+  );
   --color-tag: var(--color-neutral-200);
   --color-remote-ssh-surface: var(--color-sky-50);
   --color-remote-ssh-foreground: var(--color-sky-700);
@@ -316,32 +409,128 @@ html[data-document-hidden] *::after {
   --color-remote-docker-foreground: var(--color-violet-700);
   --color-remote-docker-border: var(--color-violet-200);
   --color-file-node: color-mix(in oklab, var(--color-sky-600) 14%, transparent);
-  --color-file-node-hover: color-mix(in oklab, var(--color-sky-600) 20%, transparent);
+  --color-file-node-hover: color-mix(
+    in oklab,
+    var(--color-sky-600) 20%,
+    transparent
+  );
   --color-file-node-foreground: var(--color-sky-600);
-  --color-skill-node: color-mix(in oklab, var(--color-violet-600) 14%, transparent);
-  --color-skill-node-hover: color-mix(in oklab, var(--color-violet-600) 20%, transparent);
+  --color-skill-node: color-mix(
+    in oklab,
+    var(--color-violet-600) 14%,
+    transparent
+  );
+  --color-skill-node-hover: color-mix(
+    in oklab,
+    var(--color-violet-600) 20%,
+    transparent
+  );
   --color-skill-node-foreground: var(--color-violet-600);
-  --color-command-node: color-mix(in oklab, var(--color-slate-500) 14%, transparent);
-  --color-command-node-hover: color-mix(in oklab, var(--color-slate-500) 20%, transparent);
+  --color-command-node: color-mix(
+    in oklab,
+    var(--color-slate-500) 14%,
+    transparent
+  );
+  --color-command-node-hover: color-mix(
+    in oklab,
+    var(--color-slate-500) 20%,
+    transparent
+  );
   --color-command-node-foreground: var(--color-slate-600);
   --color-subagent-node: color-mix(in oklab, #6f7a2f 14%, transparent);
   --color-subagent-node-hover: color-mix(in oklab, #6f7a2f 20%, transparent);
   --color-subagent-node-foreground: #6f7a2f;
-  --color-session-node: color-mix(in oklab, var(--color-teal-600) 14%, transparent);
-  --color-session-node-hover: color-mix(in oklab, var(--color-teal-600) 20%, transparent);
+  --color-session-node: color-mix(
+    in oklab,
+    var(--color-teal-600) 14%,
+    transparent
+  );
+  --color-session-node-hover: color-mix(
+    in oklab,
+    var(--color-teal-600) 20%,
+    transparent
+  );
   --color-session-node-foreground: var(--color-teal-600);
-  --color-plugin-node: color-mix(in oklab, var(--color-amber-600) 14%, transparent);
-  --color-plugin-node-hover: color-mix(in oklab, var(--color-amber-600) 20%, transparent);
+  --color-plugin-node: color-mix(
+    in oklab,
+    var(--color-amber-600) 14%,
+    transparent
+  );
+  --color-plugin-node-hover: color-mix(
+    in oklab,
+    var(--color-amber-600) 20%,
+    transparent
+  );
   --color-plugin-node-foreground: var(--color-amber-600);
   --color-plugin-paid-plan-badge: #ffe3c8;
   --color-plugin-paid-plan-badge-foreground: #4b280f;
+  /* 5 类 context chip 前景色：与文件/技能等 mention 的颜色区分，各用独立色相。 */
+  --color-web-element-node: color-mix(
+    in oklab,
+    var(--color-cyan-600) 14%,
+    transparent
+  );
+  --color-web-element-node-hover: color-mix(
+    in oklab,
+    var(--color-cyan-600) 20%,
+    transparent
+  );
+  --color-web-element-node-foreground: var(--color-cyan-600);
+  --color-code-comment-node: color-mix(
+    in oklab,
+    var(--color-emerald-600) 14%,
+    transparent
+  );
+  --color-code-comment-node-hover: color-mix(
+    in oklab,
+    var(--color-emerald-600) 20%,
+    transparent
+  );
+  --color-code-comment-node-foreground: var(--color-emerald-600);
+  --color-conversation-selection-node: color-mix(
+    in oklab,
+    var(--color-fuchsia-600) 14%,
+    transparent
+  );
+  --color-conversation-selection-node-hover: color-mix(
+    in oklab,
+    var(--color-fuchsia-600) 20%,
+    transparent
+  );
+  --color-conversation-selection-node-foreground: var(--color-fuchsia-600);
+  --color-pptx-node: color-mix(
+    in oklab,
+    var(--color-orange-600) 14%,
+    transparent
+  );
+  --color-pptx-node-hover: color-mix(
+    in oklab,
+    var(--color-orange-600) 20%,
+    transparent
+  );
+  --color-pptx-node-foreground: var(--color-orange-600);
+  --color-plugin-ui-node: color-mix(
+    in oklab,
+    var(--color-rose-600) 14%,
+    transparent
+  );
+  --color-plugin-ui-node-hover: color-mix(
+    in oklab,
+    var(--color-rose-600) 20%,
+    transparent
+  );
+  --color-plugin-ui-node-foreground: var(--color-rose-600);
 }
 
 .dark {
   --animated-gradient-text-strong: rgba(255, 255, 255, 1);
   --animated-gradient-text-soft: rgba(255, 255, 255, 0.2);
   --color-background: var(--color-neutral-900);
-  --color-background-alt: color-mix(in oklab, var(--color-neutral-800) 60%, transparent);
+  --color-background-alt: color-mix(
+    in oklab,
+    var(--color-neutral-800) 60%,
+    transparent
+  );
   --color-background-win-alt: var(--color-neutral-800);
   --color-brand: var(--color-sky-500);
   --color-resize-handle: var(--color-sky-400);
@@ -350,21 +539,41 @@ html[data-document-hidden] *::after {
   --color-trajectory-reasoning: #a78bfa;
   --color-trajectory-tool-call: #f59e0b;
   --color-trajectory-tool-result: #38bdf8;
-  --color-workflow-rule: color-mix(in oklab, var(--color-white) 6.5%, transparent);
-  --color-workflow-trace: color-mix(in oklab, var(--color-white) 35%, transparent);
-  --color-workflow-trace-strong: color-mix(in oklab, var(--color-white) 60%, transparent);
+  --color-workflow-rule: color-mix(
+    in oklab,
+    var(--color-white) 6.5%,
+    transparent
+  );
+  --color-workflow-trace: color-mix(
+    in oklab,
+    var(--color-white) 35%,
+    transparent
+  );
+  --color-workflow-trace-strong: color-mix(
+    in oklab,
+    var(--color-white) 60%,
+    transparent
+  );
   --color-accent: color-mix(in oklab, var(--color-sky-950) 50%, transparent);
   --color-find-highlight: #713f12;
   --color-find-highlight-active: #a16207;
   --color-border: color-mix(in oklab, var(--color-neutral-50) 10%, transparent);
-  --color-border-hover: color-mix(in oklab, var(--color-neutral-50) 30%, transparent);
+  --color-border-hover: color-mix(
+    in oklab,
+    var(--color-neutral-50) 30%,
+    transparent
+  );
   --color-hover: var(--color-surface-hover);
   --color-selected: color-mix(in oklab, var(--color-white) 10%, transparent);
   --color-header: var(--color-neutral-900);
   --color-panel: var(--color-neutral-900);
   --color-sidebar: var(--color-neutral-950);
   --color-surface: color-mix(in oklab, var(--color-white) 5%, transparent);
-  --color-surface-hover: color-mix(in oklab, var(--color-white) 10%, transparent);
+  --color-surface-hover: color-mix(
+    in oklab,
+    var(--color-white) 10%,
+    transparent
+  );
   --color-card: var(--color-neutral-800);
   --color-card-selected: var(--color-neutral-700);
   --color-card-border: var(--color-border);
@@ -381,7 +590,11 @@ html[data-document-hidden] *::after {
   --color-terminal-fg: var(--color-neutral-50);
   --color-terminal-cursor: var(--color-neutral-50);
   --color-terminal-cursor-accent: var(--color-neutral-950);
-  --color-terminal-selection: color-mix(in oklab, var(--color-sky-500) 26%, transparent);
+  --color-terminal-selection: color-mix(
+    in oklab,
+    var(--color-sky-500) 26%,
+    transparent
+  );
   --color-terminal-selection-inactive: color-mix(
     in oklab,
     var(--color-neutral-50) 16%,
@@ -412,15 +625,51 @@ html[data-document-hidden] *::after {
   --color-context-breakdown-1: var(--color-sky-400);
   --color-context-breakdown-2: var(--color-sky-300);
   --color-context-breakdown-3: var(--color-sky-200);
-  --color-context-breakdown-4: color-mix(in oklab, var(--color-sky-200) 84%, var(--color-white));
-  --color-context-breakdown-5: color-mix(in oklab, var(--color-sky-200) 72%, var(--color-white));
-  --color-context-breakdown-6: color-mix(in oklab, var(--color-sky-200) 60%, var(--color-white));
-  --color-context-breakdown-7: color-mix(in oklab, var(--color-sky-200) 48%, var(--color-white));
-  --color-usage-heatmap-0: color-mix(in oklab, var(--color-sky-400) 0%, var(--color-surface));
-  --color-usage-heatmap-1: color-mix(in oklab, var(--color-sky-400) 24%, var(--color-surface));
-  --color-usage-heatmap-2: color-mix(in oklab, var(--color-sky-400) 42%, var(--color-surface));
-  --color-usage-heatmap-3: color-mix(in oklab, var(--color-sky-400) 62%, var(--color-surface));
-  --color-usage-heatmap-4: color-mix(in oklab, var(--color-sky-300) 78%, var(--color-surface));
+  --color-context-breakdown-4: color-mix(
+    in oklab,
+    var(--color-sky-200) 84%,
+    var(--color-white)
+  );
+  --color-context-breakdown-5: color-mix(
+    in oklab,
+    var(--color-sky-200) 72%,
+    var(--color-white)
+  );
+  --color-context-breakdown-6: color-mix(
+    in oklab,
+    var(--color-sky-200) 60%,
+    var(--color-white)
+  );
+  --color-context-breakdown-7: color-mix(
+    in oklab,
+    var(--color-sky-200) 48%,
+    var(--color-white)
+  );
+  --color-usage-heatmap-0: color-mix(
+    in oklab,
+    var(--color-sky-400) 0%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-1: color-mix(
+    in oklab,
+    var(--color-sky-400) 24%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-2: color-mix(
+    in oklab,
+    var(--color-sky-400) 42%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-3: color-mix(
+    in oklab,
+    var(--color-sky-400) 62%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-4: color-mix(
+    in oklab,
+    var(--color-sky-300) 78%,
+    var(--color-surface)
+  );
   --color-tab: var(--color-neutral-800);
   --color-tab-active: var(--color-neutral-950);
   --color-tab-border: var(--color-border);
@@ -429,37 +678,69 @@ html[data-document-hidden] *::after {
   --color-primary: var(--color-neutral-50);
   --color-primary-foreground: var(--color-neutral-950);
   --color-secondary: var(--color-neutral-700);
-  --color-interaction-ask-surface: color-mix(in oklab, var(--color-sky-950) 50%, transparent);
+  --color-interaction-ask-surface: color-mix(
+    in oklab,
+    var(--color-sky-950) 50%,
+    transparent
+  );
   --color-interaction-ask-foreground: var(--color-sky-300);
-  --color-interaction-ask-fill: color-mix(in oklab, var(--color-green-400) 24%, transparent);
+  --color-interaction-ask-fill: color-mix(
+    in oklab,
+    var(--color-green-400) 24%,
+    transparent
+  );
   --color-interaction-confirmation-surface: color-mix(
     in oklab,
     var(--color-green-950) 45%,
     transparent
   );
   --color-interaction-confirmation-foreground: var(--color-green-300);
-  --color-success-surface: color-mix(in oklab, var(--color-green-950) 45%, transparent);
+  --color-success-surface: color-mix(
+    in oklab,
+    var(--color-green-950) 45%,
+    transparent
+  );
   --color-success-surface-foreground: var(--color-green-300);
   --color-progress-surface: var(--color-blue-950);
   --color-progress-surface-foreground: var(--color-blue-300);
   --color-foreground: var(--color-neutral-200);
-  --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-200) 60%, transparent);
+  --color-foreground-subtle: color-mix(
+    in oklab,
+    var(--color-neutral-200) 60%,
+    transparent
+  );
   --color-remote-foreground-muted: #b3b3b3;
-  --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-200) 30%, transparent);
+  --color-foreground-subtlest: color-mix(
+    in oklab,
+    var(--color-neutral-200) 30%,
+    transparent
+  );
   --lucide-subtlest-opacity: 0.3;
   --color-foreground-inverse: var(--color-white);
   --color-success: var(--color-green-500);
   --color-success-foreground: var(--color-foreground-inverse);
   --color-idle-task: var(--color-violet-400);
-  --color-idle-task-surface: color-mix(in oklab, var(--color-violet-950) 50%, transparent);
+  --color-idle-task-surface: color-mix(
+    in oklab,
+    var(--color-violet-950) 50%,
+    transparent
+  );
   --color-destructive: var(--color-red-500);
   --color-destructive-foreground: var(--color-foreground-inverse);
   --color-warning: var(--color-yellow-500);
   --color-feedback-privacy-hint: var(--color-yellow-300);
   --color-warning-foreground: var(--color-foreground-inverse);
-  --color-warning-surface: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  --color-warning-surface: color-mix(
+    in srgb,
+    var(--color-warning) 16%,
+    transparent
+  );
   --color-warning-surface-foreground: var(--color-yellow-400);
-  --color-destructive-surface: color-mix(in srgb, var(--color-destructive) 16%, transparent);
+  --color-destructive-surface: color-mix(
+    in srgb,
+    var(--color-destructive) 16%,
+    transparent
+  );
   --color-destructive-surface-foreground: var(--color-red-300);
   --color-diff-added: var(--color-green-500);
   --color-diff-added-foreground: var(--color-foreground-inverse);
@@ -477,37 +758,145 @@ html[data-document-hidden] *::after {
   --color-tooltip: var(--color-neutral-900);
   --color-tooltip-foreground: var(--color-neutral-50);
   --color-tooltip-tag: var(--color-neutral-800);
-  --color-tooltip-tag-foreground: color-mix(in oklab, var(--color-neutral-50) 60%, transparent);
+  --color-tooltip-tag-foreground: color-mix(
+    in oklab,
+    var(--color-neutral-50) 60%,
+    transparent
+  );
   --color-tag: var(--color-neutral-700);
-  --color-remote-ssh-surface: color-mix(in oklab, var(--color-sky-500) 18%, transparent);
+  --color-remote-ssh-surface: color-mix(
+    in oklab,
+    var(--color-sky-500) 18%,
+    transparent
+  );
   --color-remote-ssh-foreground: var(--color-sky-300);
   --color-remote-ssh-border: var(--color-sky-700);
-  --color-remote-wsl-surface: color-mix(in oklab, var(--color-green-500) 18%, transparent);
+  --color-remote-wsl-surface: color-mix(
+    in oklab,
+    var(--color-green-500) 18%,
+    transparent
+  );
   --color-remote-wsl-foreground: var(--color-green-300);
   --color-remote-wsl-border: var(--color-green-700);
-  --color-remote-docker-surface: color-mix(in oklab, var(--color-violet-500) 18%, transparent);
+  --color-remote-docker-surface: color-mix(
+    in oklab,
+    var(--color-violet-500) 18%,
+    transparent
+  );
   --color-remote-docker-foreground: var(--color-violet-300);
   --color-remote-docker-border: var(--color-violet-700);
   --color-file-node: color-mix(in oklab, var(--color-sky-400) 18%, transparent);
-  --color-file-node-hover: color-mix(in oklab, var(--color-sky-400) 24%, transparent);
+  --color-file-node-hover: color-mix(
+    in oklab,
+    var(--color-sky-400) 24%,
+    transparent
+  );
   --color-file-node-foreground: var(--color-sky-300);
-  --color-skill-node: color-mix(in oklab, var(--color-violet-400) 18%, transparent);
-  --color-skill-node-hover: color-mix(in oklab, var(--color-violet-400) 24%, transparent);
+  --color-skill-node: color-mix(
+    in oklab,
+    var(--color-violet-400) 18%,
+    transparent
+  );
+  --color-skill-node-hover: color-mix(
+    in oklab,
+    var(--color-violet-400) 24%,
+    transparent
+  );
   --color-skill-node-foreground: var(--color-violet-300);
-  --color-command-node: color-mix(in oklab, var(--color-slate-300) 16%, transparent);
-  --color-command-node-hover: color-mix(in oklab, var(--color-slate-300) 22%, transparent);
+  --color-command-node: color-mix(
+    in oklab,
+    var(--color-slate-300) 16%,
+    transparent
+  );
+  --color-command-node-hover: color-mix(
+    in oklab,
+    var(--color-slate-300) 22%,
+    transparent
+  );
   --color-command-node-foreground: var(--color-slate-300);
   --color-subagent-node: color-mix(in oklab, #b7bd75 18%, transparent);
   --color-subagent-node-hover: color-mix(in oklab, #b7bd75 24%, transparent);
   --color-subagent-node-foreground: #b7bd75;
-  --color-session-node: color-mix(in oklab, var(--color-teal-400) 18%, transparent);
-  --color-session-node-hover: color-mix(in oklab, var(--color-teal-400) 24%, transparent);
+  --color-session-node: color-mix(
+    in oklab,
+    var(--color-teal-400) 18%,
+    transparent
+  );
+  --color-session-node-hover: color-mix(
+    in oklab,
+    var(--color-teal-400) 24%,
+    transparent
+  );
   --color-session-node-foreground: var(--color-teal-300);
-  --color-plugin-node: color-mix(in oklab, var(--color-amber-400) 18%, transparent);
-  --color-plugin-node-hover: color-mix(in oklab, var(--color-amber-400) 24%, transparent);
+  --color-plugin-node: color-mix(
+    in oklab,
+    var(--color-amber-400) 18%,
+    transparent
+  );
+  --color-plugin-node-hover: color-mix(
+    in oklab,
+    var(--color-amber-400) 24%,
+    transparent
+  );
   --color-plugin-node-foreground: var(--color-amber-300);
   --color-plugin-paid-plan-badge: #5a341b;
   --color-plugin-paid-plan-badge-foreground: #ffd8b8;
+  /* 5 类 context chip 前景色：与文件/技能等 mention 的颜色区分，各用独立色相。 */
+  --color-web-element-node: color-mix(
+    in oklab,
+    var(--color-cyan-400) 18%,
+    transparent
+  );
+  --color-web-element-node-hover: color-mix(
+    in oklab,
+    var(--color-cyan-400) 24%,
+    transparent
+  );
+  --color-web-element-node-foreground: var(--color-cyan-300);
+  --color-code-comment-node: color-mix(
+    in oklab,
+    var(--color-emerald-400) 18%,
+    transparent
+  );
+  --color-code-comment-node-hover: color-mix(
+    in oklab,
+    var(--color-emerald-400) 24%,
+    transparent
+  );
+  --color-code-comment-node-foreground: var(--color-emerald-300);
+  --color-conversation-selection-node: color-mix(
+    in oklab,
+    var(--color-fuchsia-400) 18%,
+    transparent
+  );
+  --color-conversation-selection-node-hover: color-mix(
+    in oklab,
+    var(--color-fuchsia-400) 24%,
+    transparent
+  );
+  --color-conversation-selection-node-foreground: var(--color-fuchsia-300);
+  --color-pptx-node: color-mix(
+    in oklab,
+    var(--color-orange-400) 18%,
+    transparent
+  );
+  --color-pptx-node-hover: color-mix(
+    in oklab,
+    var(--color-orange-400) 24%,
+    transparent
+  );
+  --color-pptx-node-foreground: var(--color-orange-300);
+  --color-plugin-ui-node: color-mix(
+    in oklab,
+    var(--color-rose-400) 18%,
+    transparent
+  );
+  --color-plugin-ui-node-hover: color-mix(
+    in oklab,
+    var(--color-rose-400) 24%,
+    transparent
+  );
+  --color-plugin-ui-node-foreground: var(--color-rose-300);
 }
 
 .theme-zai-light {
@@ -515,7 +904,11 @@ html[data-document-hidden] *::after {
   --animated-gradient-text-soft: rgba(13, 13, 13, 0.22);
   --color-background: #f8f8f8;
   --color-background-win-alt: #ececee;
-  --color-background-alt: color-mix(in oklab, var(--color-background) 70%, transparent);
+  --color-background-alt: color-mix(
+    in oklab,
+    var(--color-background) 70%,
+    transparent
+  );
   --color-brand: #000000;
   --color-trajectory-user: #2563eb;
   --color-trajectory-assistant: #0f766e;
@@ -584,11 +977,31 @@ html[data-document-hidden] *::after {
   --color-context-breakdown-5: #acd0ff;
   --color-context-breakdown-6: #c8ddff;
   --color-context-breakdown-7: #e0ecff;
-  --color-usage-heatmap-0: color-mix(in oklab, #0b7fff 0%, var(--color-surface));
-  --color-usage-heatmap-1: color-mix(in oklab, #0b7fff 18%, var(--color-surface));
-  --color-usage-heatmap-2: color-mix(in oklab, #0b7fff 36%, var(--color-surface));
-  --color-usage-heatmap-3: color-mix(in oklab, #0b7fff 58%, var(--color-surface));
-  --color-usage-heatmap-4: color-mix(in oklab, #0066dd 82%, var(--color-surface));
+  --color-usage-heatmap-0: color-mix(
+    in oklab,
+    #0b7fff 0%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-1: color-mix(
+    in oklab,
+    #0b7fff 18%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-2: color-mix(
+    in oklab,
+    #0b7fff 36%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-3: color-mix(
+    in oklab,
+    #0b7fff 58%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-4: color-mix(
+    in oklab,
+    #0066dd 82%,
+    var(--color-surface)
+  );
   --color-tab: #f0f0f0;
   --color-tab-active: #ffffff;
   --color-tab-border: var(--color-border);
@@ -607,9 +1020,17 @@ html[data-document-hidden] *::after {
   --color-progress-surface: var(--color-blue-50);
   --color-progress-surface-foreground: var(--color-blue-700);
   --color-foreground: var(--color-neutral-800);
-  --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-800) 60%, transparent);
+  --color-foreground-subtle: color-mix(
+    in oklab,
+    var(--color-neutral-800) 60%,
+    transparent
+  );
   --color-remote-foreground-muted: #595959;
-  --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-800) 40%, transparent);
+  --color-foreground-subtlest: color-mix(
+    in oklab,
+    var(--color-neutral-800) 40%,
+    transparent
+  );
   --lucide-subtlest-opacity: 0.4;
   --color-foreground-inverse: #ffffff;
   --color-success: #1e8a3e;
@@ -621,9 +1042,17 @@ html[data-document-hidden] *::after {
   --color-warning: #e07b00;
   --color-feedback-privacy-hint: var(--color-yellow-600);
   --color-warning-foreground: #ffffff;
-  --color-warning-surface: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  --color-warning-surface: color-mix(
+    in srgb,
+    var(--color-warning) 12%,
+    transparent
+  );
   --color-warning-surface-foreground: #914e00;
-  --color-destructive-surface: color-mix(in srgb, var(--color-destructive) 10%, transparent);
+  --color-destructive-surface: color-mix(
+    in srgb,
+    var(--color-destructive) 10%,
+    transparent
+  );
   --color-destructive-surface-foreground: #b42020;
   --color-diff-added: #1e8a3e;
   --color-diff-added-foreground: #ffffff;
@@ -672,6 +1101,22 @@ html[data-document-hidden] *::after {
   --color-plugin-node-foreground: #b87a1a;
   --color-plugin-paid-plan-badge: #ffe3c8;
   --color-plugin-paid-plan-badge-foreground: #4b280f;
+  /* 5 类 context chip 前景色：与文件/技能等 mention 的颜色区分，各用独立色相。 */
+  --color-web-element-node: rgba(8, 145, 178, 0.1);
+  --color-web-element-node-hover: rgba(8, 145, 178, 0.16);
+  --color-web-element-node-foreground: #0891b2;
+  --color-code-comment-node: rgba(5, 150, 105, 0.1);
+  --color-code-comment-node-hover: rgba(5, 150, 105, 0.16);
+  --color-code-comment-node-foreground: #059669;
+  --color-conversation-selection-node: rgba(192, 38, 211, 0.1);
+  --color-conversation-selection-node-hover: rgba(192, 38, 211, 0.16);
+  --color-conversation-selection-node-foreground: #c026d3;
+  --color-pptx-node: rgba(234, 88, 12, 0.1);
+  --color-pptx-node-hover: rgba(234, 88, 12, 0.16);
+  --color-pptx-node-foreground: #ea580c;
+  --color-plugin-ui-node: rgba(225, 29, 72, 0.1);
+  --color-plugin-ui-node-hover: rgba(225, 29, 72, 0.16);
+  --color-plugin-ui-node-foreground: #e11d48;
 }
 
 .theme-zai-dark {
@@ -679,7 +1124,11 @@ html[data-document-hidden] *::after {
   --animated-gradient-text-soft: rgba(255, 255, 255, 0.22);
   --color-background: #161616;
   --color-background-win-alt: #2b2b2b;
-  --color-background-alt: color-mix(in oklab, var(--color-background-win-alt) 60%, transparent);
+  --color-background-alt: color-mix(
+    in oklab,
+    var(--color-background-win-alt) 60%,
+    transparent
+  );
   --color-brand: #ffffff;
   --color-trajectory-user: #60a5fa;
   --color-trajectory-assistant: #2dd4bf;
@@ -748,11 +1197,31 @@ html[data-document-hidden] *::after {
   --color-context-breakdown-5: #b9ddff;
   --color-context-breakdown-6: #d0e8ff;
   --color-context-breakdown-7: #e4f1ff;
-  --color-usage-heatmap-0: color-mix(in oklab, #4099ff 0%, var(--color-surface));
-  --color-usage-heatmap-1: color-mix(in oklab, #4099ff 24%, var(--color-surface));
-  --color-usage-heatmap-2: color-mix(in oklab, #4099ff 42%, var(--color-surface));
-  --color-usage-heatmap-3: color-mix(in oklab, #4099ff 62%, var(--color-surface));
-  --color-usage-heatmap-4: color-mix(in oklab, #80beff 78%, var(--color-surface));
+  --color-usage-heatmap-0: color-mix(
+    in oklab,
+    #4099ff 0%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-1: color-mix(
+    in oklab,
+    #4099ff 24%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-2: color-mix(
+    in oklab,
+    #4099ff 42%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-3: color-mix(
+    in oklab,
+    #4099ff 62%,
+    var(--color-surface)
+  );
+  --color-usage-heatmap-4: color-mix(
+    in oklab,
+    #80beff 78%,
+    var(--color-surface)
+  );
   --color-tab: #202020;
   --color-tab-active: #161616;
   --color-tab-border: var(--color-border);
@@ -771,9 +1240,17 @@ html[data-document-hidden] *::after {
   --color-progress-surface: rgba(70, 130, 240, 0.16);
   --color-progress-surface-foreground: var(--color-blue-300);
   --color-foreground: var(--color-neutral-300);
-  --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-300) 60%, transparent);
+  --color-foreground-subtle: color-mix(
+    in oklab,
+    var(--color-neutral-300) 60%,
+    transparent
+  );
   --color-remote-foreground-muted: #b3b3b3;
-  --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-300) 30%, transparent);
+  --color-foreground-subtlest: color-mix(
+    in oklab,
+    var(--color-neutral-300) 30%,
+    transparent
+  );
   --lucide-subtlest-opacity: 0.3;
   --color-foreground-inverse: #000000;
   --color-success: #46bf72;
@@ -786,9 +1263,17 @@ html[data-document-hidden] *::after {
   --color-warning: #ff8a30;
   --color-feedback-privacy-hint: var(--color-yellow-300);
   --color-warning-foreground: #000000;
-  --color-warning-surface: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  --color-warning-surface: color-mix(
+    in srgb,
+    var(--color-warning) 16%,
+    transparent
+  );
   --color-warning-surface-foreground: #ffa159;
-  --color-destructive-surface: color-mix(in srgb, var(--color-destructive) 16%, transparent);
+  --color-destructive-surface: color-mix(
+    in srgb,
+    var(--color-destructive) 16%,
+    transparent
+  );
   --color-destructive-surface-foreground: #ff8585;
   --color-diff-added: #46bf72;
   --color-diff-added-foreground: #000000;
@@ -837,6 +1322,22 @@ html[data-document-hidden] *::after {
   --color-plugin-node-foreground: #efc58f;
   --color-plugin-paid-plan-badge: #5a341b;
   --color-plugin-paid-plan-badge-foreground: #ffd8b8;
+  /* 5 类 context chip 前景色：与文件/技能等 mention 的颜色区分，各用独立色相。 */
+  --color-web-element-node: rgba(80, 200, 230, 0.16);
+  --color-web-element-node-hover: rgba(80, 200, 230, 0.22);
+  --color-web-element-node-foreground: #8fe0f5;
+  --color-code-comment-node: rgba(80, 220, 160, 0.16);
+  --color-code-comment-node-hover: rgba(80, 220, 160, 0.22);
+  --color-code-comment-node-foreground: #9ee8c4;
+  --color-conversation-selection-node: rgba(220, 120, 240, 0.16);
+  --color-conversation-selection-node-hover: rgba(220, 120, 240, 0.22);
+  --color-conversation-selection-node-foreground: #e4a6f5;
+  --color-pptx-node: rgba(240, 140, 80, 0.16);
+  --color-pptx-node-hover: rgba(240, 140, 80, 0.22);
+  --color-pptx-node-foreground: #f5b489;
+  --color-plugin-ui-node: rgba(240, 110, 140, 0.16);
+  --color-plugin-ui-node-hover: rgba(240, 110, 140, 0.22);
+  --color-plugin-ui-node-foreground: #f5a3b8;
 }
 
 /*
@@ -938,7 +1439,11 @@ html[data-document-hidden] *::after {
   .highspeed-animated-gradient-text .animated-gradient-text {
     /* Bug 根因：accelerated turn 只改了工时文案，内部思考和工具仍继承普通扫光色。 */
     --animated-gradient-text-strong: var(--color-icon-purple);
-    --animated-gradient-text-soft: color-mix(in srgb, var(--color-icon-purple) 22%, transparent);
+    --animated-gradient-text-soft: color-mix(
+      in srgb,
+      var(--color-icon-purple) 22%,
+      transparent
+    );
   }
 
   .cua-group-gradient-text {
@@ -1171,7 +1676,8 @@ html[data-document-hidden] *::after {
   background: transparent;
   opacity: 0;
   pointer-events: none;
-  animation: zcode-reaction-particles 560ms cubic-bezier(0.16, 1, 0.3, 1) 60ms forwards;
+  animation: zcode-reaction-particles 560ms cubic-bezier(0.16, 1, 0.3, 1) 60ms
+    forwards;
 }
 
 .animate-zcode-alarm-ring {
@@ -1246,12 +1752,14 @@ html[data-document-hidden] *::after {
   0%,
   100% {
     background-color: color-mix(in oklab, var(--color-brand) 10%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-brand) 10%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--color-brand) 10%, transparent);
   }
 
   50% {
     background-color: color-mix(in oklab, var(--color-brand) 16%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-brand) 18%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--color-brand) 18%, transparent);
   }
 }
 
@@ -1265,8 +1773,8 @@ html[data-document-hidden] *::after {
 }
 
 .zcode-task-interaction-countdown-fill {
-  animation: zcode-task-interaction-countdown var(--zcode-interaction-remaining-ms, 240000ms) linear
-    forwards;
+  animation: zcode-task-interaction-countdown
+    var(--zcode-interaction-remaining-ms, 240000ms) linear forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1298,7 +1806,8 @@ html[data-document-hidden] *::after {
     color-mix(in oklab, var(--color-primary-foreground) 62%, transparent),
     transparent
   );
-  animation: zcode-update-charge-sweep 1.15s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  animation: zcode-update-charge-sweep 1.15s cubic-bezier(0.65, 0, 0.35, 1)
+    infinite;
   transform: translateX(-120%);
 }
 
@@ -1378,12 +1887,14 @@ html[data-document-hidden] *::after {
 @keyframes task-search-result-highlight {
   0% {
     background-color: color-mix(in oklab, var(--color-brand) 20%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-brand) 28%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--color-brand) 28%, transparent);
   }
 
   45% {
     background-color: color-mix(in oklab, var(--color-brand) 14%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-brand) 20%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--color-brand) 20%, transparent);
   }
 
   100% {
@@ -1403,7 +1914,8 @@ html[data-document-hidden] *::after {
   }
   20% {
     background-color: color-mix(in oklab, var(--color-brand) 24%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-brand) 32%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in oklab, var(--color-brand) 32%, transparent);
   }
   100% {
     background-color: transparent;
@@ -1543,7 +2055,11 @@ html[data-document-hidden] *::after {
 .wf-pill-open:focus-visible {
   background-color: var(--color-surface-hover);
   box-shadow: inset 0 0 0 1px
-    color-mix(in oklab, var(--wf-avatar, var(--color-border-hover)) 35%, transparent);
+    color-mix(
+      in oklab,
+      var(--wf-avatar, var(--color-border-hover)) 35%,
+      transparent
+    );
 }
 /* 代理胶囊仅用底色反馈悬停，避免彩色描边抢占状态层级。 */
 .wf-agent-pill:hover {
@@ -1719,7 +2235,8 @@ html[data-document-hidden] *::after {
  * 警示色光晕——不搏动，那里没有东西在跑，run 在等主代理写代码。尾巴留白的残段向右淡出：脚本的结尾
  * 还没写下。补全行草稿线上的邻站 40% 墨：它们只是上下文。 */
 .wf-lamp-hole-waiting {
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-warning) 20%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in oklab, var(--color-warning) 20%, transparent);
 }
 .wf-tail-stub {
   -webkit-mask-image: linear-gradient(90deg, #000, transparent);
@@ -1771,13 +2288,16 @@ html[data-document-hidden] *::after {
   transition: color var(--wf-t-base) var(--wf-ease);
 }
 .wf-station-open:hover .wf-lamp[data-lamp="pending"] {
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-foreground) 10%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in oklab, var(--color-foreground) 10%, transparent);
 }
 .wf-station-open:hover .wf-lamp[data-lamp="done"] {
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-success) 18%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in oklab, var(--color-success) 18%, transparent);
 }
 .wf-station-open:hover .wf-lamp[data-lamp="failed"] {
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-destructive) 18%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in oklab, var(--color-destructive) 18%, transparent);
 }
 .wf-ink {
   transition:
@@ -2008,7 +2528,8 @@ html[data-document-hidden] *::after {
 }
 
 .wf-face[data-motion="blink"] .wf-face-lids {
-  animation: wf-face-blink var(--wf-face-blink-time, 230ms) ease-in-out var(--wf-face-blinks, 2);
+  animation: wf-face-blink var(--wf-face-blink-time, 230ms) ease-in-out
+    var(--wf-face-blinks, 2);
 }
 .wf-face[data-motion="morph"] .wf-face-lids {
   animation: wf-face-morph 180ms ease-in-out;
@@ -2103,10 +2624,14 @@ html[data-document-hidden] *::after {
 .wf-face[data-motion="dots-wave"] [data-eye-expression="dots"] circle {
   animation: wf-face-dot-float 500ms ease-in-out both;
 }
-.wf-face[data-motion="dots-wave"] [data-eye-expression="dots"] circle:nth-child(2) {
+.wf-face[data-motion="dots-wave"]
+  [data-eye-expression="dots"]
+  circle:nth-child(2) {
   animation-delay: 200ms;
 }
-.wf-face[data-motion="dots-wave"] [data-eye-expression="dots"] circle:nth-child(3) {
+.wf-face[data-motion="dots-wave"]
+  [data-eye-expression="dots"]
+  circle:nth-child(3) {
   animation-delay: 400ms;
 }
 @keyframes wf-face-dot-float {
@@ -2263,8 +2788,8 @@ html[data-document-hidden] *::after {
   width: 1rem;
   height: 1rem;
   flex-shrink: 0;
-  background: var(--mention-icon-color, transparent) var(--mention-image, none) center / contain
-    no-repeat;
+  background: var(--mention-icon-color, transparent) var(--mention-image, none)
+    center / contain no-repeat;
   mask: var(--mention-mask, none) center / contain no-repeat;
 }
 
@@ -2273,7 +2798,9 @@ html[data-document-hidden] *::after {
 }
 
 /* 文件视图保留任务面板用于位移动效，延伸横线必须随原面板一起隐藏。 */
-[data-workspace-shell]:has([data-project-sidebar-panel="navigation"][aria-hidden="true"])
+[data-workspace-shell]:has(
+    [data-project-sidebar-panel="navigation"][aria-hidden="true"]
+  )
   [data-sidebar-divider-extension] {
   display: none;
 }

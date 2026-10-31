@@ -15,6 +15,8 @@ export interface UseCodeCommentContextsOptions {
   onContextRemoved?: (context: CodeCommentComposerAttachment) => void;
   requestFocus?: () => void;
   scopeKey: string;
+  /** 上下文加入后回调（编辑器内 context chip 的视觉占位由调用方负责插入）。 */
+  onContextAdded?: (context: CodeCommentComposerAttachment) => void;
 }
 
 export interface UseCodeCommentContextsResult {
@@ -51,14 +53,19 @@ export function useCodeCommentContexts({
   onContextRemoved,
   requestFocus,
   scopeKey,
+  onContextAdded,
 }: UseCodeCommentContextsOptions): UseCodeCommentContextsResult {
   const [contexts, setContexts] = useState<
     readonly CodeCommentComposerAttachment[]
   >([]);
   const contextsRef = useRef(contexts);
-  const callbacksRef = useRef({ onContextRemoved, requestFocus });
+  const callbacksRef = useRef({
+    onContextRemoved,
+    requestFocus,
+    onContextAdded,
+  });
   const scopeKeyRef = useRef(scopeKey);
-  callbacksRef.current = { onContextRemoved, requestFocus };
+  callbacksRef.current = { onContextRemoved, requestFocus, onContextAdded };
 
   const commitContexts = useCallback(
     (next: readonly CodeCommentComposerAttachment[]) => {
@@ -137,6 +144,10 @@ export function useCodeCommentContexts({
               index === existingIndex ? attachment : context,
             );
       commitContexts(next);
+      // 只对新增（非替换）触发编辑器 chip 插入，避免重复添加同一 context 时反复插入。
+      if (existingIndex < 0) {
+        callbacksRef.current.onContextAdded?.(attachment);
+      }
       callbacksRef.current.requestFocus?.();
     };
 

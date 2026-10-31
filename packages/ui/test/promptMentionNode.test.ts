@@ -37,15 +37,21 @@ describe("PromptMentionNode", () => {
   }
 
   it("keeps native selection offsets aligned with the visible label", async () => {
-    const { editor, rootElement } = await renderPluginMention("https://cdn.example.com/demo.png");
-    expect(editor.getEditorState().read(() => $getRoot().getTextContent())).toBe("Demo");
-    expect(rootElement.querySelector("[data-mention-id]")?.firstChild?.nodeType).toBe(
-      Node.TEXT_NODE,
+    const { editor, rootElement } = await renderPluginMention(
+      "https://cdn.example.com/demo.png",
     );
+    expect(
+      editor.getEditorState().read(() => $getRoot().getTextContent()),
+    ).toBe("Demo");
+    expect(
+      rootElement.querySelector("[data-mention-id]")?.firstChild?.nodeType,
+    ).toBe(Node.TEXT_NODE);
   });
 
   it("renders a trusted original Plugin icon and keeps canonical text content", async () => {
-    const { editor, rootElement } = await renderPluginMention("https://cdn.example.com/demo.png");
+    const { editor, rootElement } = await renderPluginMention(
+      "https://cdn.example.com/demo.png",
+    );
 
     expect(
       rootElement
@@ -60,7 +66,9 @@ describe("PromptMentionNode", () => {
   });
 
   it("rejects an untrusted Plugin icon URL and falls back to Cable", async () => {
-    const { rootElement } = await renderPluginMention("http://cdn.example.com/demo.png");
+    const { rootElement } = await renderPluginMention(
+      "http://cdn.example.com/demo.png",
+    );
 
     expect(rootElement.querySelector("img")).toBeNull();
     expect(
@@ -84,7 +92,9 @@ describe("PromptMentionNode", () => {
       },
     );
     try {
-      const { rootElement } = await renderPluginMention("https://cdn.example.com/fail.png");
+      const { rootElement } = await renderPluginMention(
+        "https://cdn.example.com/fail.png",
+      );
       const chip = rootElement.querySelector<HTMLElement>("[data-mention-id]")!;
       const text = chip.firstChild;
       document.body.append(rootElement);
@@ -96,7 +106,9 @@ describe("PromptMentionNode", () => {
       rootElement.remove();
       expect(chip.firstChild).toBe(text);
       expect(chip.textContent).toBe("Demo");
-      expect(chip.style.getPropertyValue("--mention-mask")).toContain("data:image/svg+xml");
+      expect(chip.style.getPropertyValue("--mention-mask")).toContain(
+        "data:image/svg+xml",
+      );
       expect(chip.style.getPropertyValue("--mention-image")).toBe("");
     } finally {
       vi.unstubAllGlobals();
@@ -118,8 +130,58 @@ describe("PromptMentionNode", () => {
         "sess_visible_target",
       ),
     ).toBe("Review mailbox flow");
-    expect(normalizePromptMentionDisplayLabel("skills", "code-review", "code-review")).toBe(
-      "code-review",
+    expect(
+      normalizePromptMentionDisplayLabel(
+        "skills",
+        "code-review",
+        "code-review",
+      ),
+    ).toBe("code-review");
+  });
+
+  it("applies a distinct color class per context subtype", async () => {
+    async function renderContextChip(
+      attachmentType: "web-element" | "code-comment",
+    ) {
+      const editor = createEditor({ nodes: [PromptMentionNode] });
+      const rootElement = document.createElement("div");
+      editor.setRootElement(rootElement);
+      await new Promise<void>((resolve) => {
+        editor.update(
+          () => {
+            $getRoot().append(
+              $createParagraphNode().append(
+                $createPromptMentionNode({
+                  id: `context:${attachmentType}`,
+                  category: "contexts",
+                  label: "Context",
+                  value: "",
+                  markdown: "",
+                  data: { attachmentType },
+                }),
+              ),
+            );
+          },
+          { onUpdate: resolve },
+        );
+      });
+      return rootElement;
+    }
+
+    const webRoot = await renderContextChip("web-element");
+    const commentRoot = await renderContextChip("code-comment");
+    const webChip = webRoot.querySelector<HTMLElement>("[data-mention-id]");
+    const commentChip =
+      commentRoot.querySelector<HTMLElement>("[data-mention-id]");
+    expect(
+      webChip?.classList.contains("text-web-element-node-foreground"),
+    ).toBe(true);
+    expect(
+      commentChip?.classList.contains("text-code-comment-node-foreground"),
+    ).toBe(true);
+    // 两类 context 使用不同颜色类，保证聊天内容里可区分
+    expect(webChip?.className).not.toContain(
+      "text-code-comment-node-foreground",
     );
   });
 });

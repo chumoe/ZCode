@@ -1,4 +1,8 @@
-import { TID_V4_EDIT_SUBMIT, TID_V4_ROW_ATTACHMENTS, testId } from "@zcode/shared/test-ids";
+import {
+  TID_V4_EDIT_SUBMIT,
+  TID_V4_ROW_ATTACHMENTS,
+  testId,
+} from "@zcode/shared/test-ids";
 import { clearAppData, clickTestIdByDom } from "../helpers/desktop-app.js";
 import {
   beginFirstV4UserQueryEdit,
@@ -11,7 +15,8 @@ import {
 } from "../helpers/v4-conversation.js";
 
 const MARKER = "E2E_ATTACHMENT_LAYOUT_VISIBLE";
-const LONG_FILE = "e2e-attachment-layout-a-very-long-filename-for-truncation.txt";
+const LONG_FILE =
+  "e2e-attachment-layout-a-very-long-filename-for-truncation.txt";
 const SECOND_FILE = "e2e-attachment-layout-second.txt";
 const IMAGE_FILE = "e2e-attachment-layout-image.png";
 const FAILED_IMAGE_FILE = "e2e-attachment-layout-failed.png";
@@ -55,17 +60,21 @@ describe("AL01-AL20：附件界面改版", () => {
     expect(composer.longFileTitle).toBe(LONG_FILE);
     expect(composer.longFileTruncated).toBe(true);
     expect(composer.contextLabels).toHaveLength(3);
-    expect(composer.hasSeparateContextRow).toBe(true);
+    // context 现在插入编辑器正文（与文件 mention 一致），不再有输入框顶部的独立行。
+    expect(composer.hasSeparateContextRow).toBe(false);
 
     await assertComposerRemoveVisibility();
-    await assertContextHoverAlignment("composer");
+    await assertContextHoverAlignment();
     await assertThemeSurfaces();
     await assertNarrowComposerWrap();
 
     await clickV4Send();
     await waitForV4TimelineContaining("V4_ATTACHMENT_LAYOUT_SEND_OK", 45_000);
     await waitForV4Pane(
-      (state) => !state.canStop && state.sessionId !== null && state.sessionId !== "draft",
+      (state) =>
+        !state.canStop &&
+        state.sessionId !== null &&
+        state.sessionId !== "draft",
       "附件布局首发后没有回到 idle",
       45_000,
     );
@@ -77,11 +86,18 @@ describe("AL01-AL20：附件界面改版", () => {
     expect(sent.mediaKinds).toEqual(["image"]);
     expect(sent.fileNames).toEqual([LONG_FILE, SECOND_FILE]);
     expect(sent.filePillsAreRoundAndBorderless).toBe(true);
-    expect(sent.pillOrder).toEqual(["file", "file", "comment", "web", "pptx", "selection"]);
+    expect(sent.pillOrder).toEqual([
+      "file",
+      "file",
+      "comment",
+      "web",
+      "pptx",
+      "selection",
+    ]);
     expect(sent.rightEdgesAligned).toBe(true);
     expect(sent.bubbleWidth).toBeLessThan(sent.rowWidth - 8);
     expect(sent.emptyUserRows).toBe(0);
-    await assertContextHoverAlignment("sent");
+    await assertContextHoverAlignment();
     await assertNarrowSentWrap();
     await assertDesktopAndTouchActions();
 
@@ -100,7 +116,13 @@ describe("AL01-AL20：附件界面改版", () => {
     });
     await waitForV4TimelineContaining("V4_ATTACHMENT_LAYOUT_EDIT_OK", 45_000);
     const edited = await waitForSentLayout();
-    expect(edited.pillOrder).toEqual(["file", "file", "comment", "pptx", "selection"]);
+    expect(edited.pillOrder).toEqual([
+      "file",
+      "file",
+      "comment",
+      "pptx",
+      "selection",
+    ]);
 
     // 仅 context 的消息不渲染空气泡；同时证明协议正文不会泄漏到可见消息。
     await setV4ComposerText(
@@ -123,7 +145,11 @@ describe("AL01-AL20：附件界面改版", () => {
     await installImageObjectUrlFailureForBlobSize(FAILED_IMAGE_BLOB_SIZE);
     await clickV4Send();
     await waitForV4TimelineContaining("V4_ATTACHMENT_FAILED_IMAGE_OK", 45_000);
-    await waitForV4Pane((state) => !state.canStop, "失败图片 case 发送后没有回到 idle", 45_000);
+    await waitForV4Pane(
+      (state) => !state.canStop,
+      "失败图片 case 发送后没有回到 idle",
+      45_000,
+    );
     const failedImage = await waitForFailedSentImage();
     expect(failedImage.role).toBeNull();
     expect(failedImage.title).not.toBe("");
@@ -236,34 +262,47 @@ async function waitForComposerLayout() {
 function readComposerLayout() {
   return browser.execute(
     (imageFile, longFile, secondFile) => {
-      const row = document.querySelector<HTMLElement>("[data-composer-file-attachments-row]");
-      const contextRow = document.querySelector<HTMLElement>(
-        "[data-composer-context-attachments-row]",
+      const row = document.querySelector<HTMLElement>(
+        "[data-composer-file-attachments-row]",
+      );
+      // context 已与文件 mention 一致：作为视觉 chip 插入编辑器正文，不再有顶部独立行。
+      const contextChips = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          ".prompt-mention[data-mention-category='contexts']",
+        ),
       );
       const cards = Array.from(row?.children ?? []) as HTMLElement[];
-      const media = cards.find((card) => card.dataset.composerAttachmentKind === "image");
-      const files = cards.filter((card) => card.dataset.composerAttachmentKind === "file");
-      const longName = files.find((file) => file.textContent?.includes("a-very-long-filename"));
+      const media = cards.find(
+        (card) => card.dataset.composerAttachmentKind === "image",
+      );
+      const files = cards.filter(
+        (card) => card.dataset.composerAttachmentKind === "file",
+      );
+      const longName = files.find((file) =>
+        file.textContent?.includes("a-very-long-filename"),
+      );
       const longLabel = longName?.querySelector<HTMLElement>("[title]");
       return {
-        contextLabels: Array.from(contextRow?.children ?? []).map(
-          (item) => item.getAttribute("aria-label") ?? "",
+        contextLabels: contextChips
+          .map((chip) => chip.textContent ?? "")
+          .filter(Boolean),
+        fileHeights: files.map((file) =>
+          Math.round(file.getBoundingClientRect().height),
         ),
-        fileHeights: files.map((file) => Math.round(file.getBoundingClientRect().height)),
         filenames: cards.map(
           (card) =>
             [imageFile, longFile, secondFile].find(
               (filename) =>
-                card.querySelector<HTMLImageElement>("img[alt]")?.alt === filename ||
-                card.textContent?.includes(filename),
+                card.querySelector<HTMLImageElement>("img[alt]")?.alt ===
+                  filename || card.textContent?.includes(filename),
             ) ?? "",
         ),
-        hasSeparateContextRow: Boolean(
-          row && contextRow && row.parentElement === contextRow.parentElement,
-        ),
+        hasSeparateContextRow: false,
         kinds: cards.map((card) => card.dataset.composerAttachmentKind ?? ""),
         longFileTitle: longLabel?.getAttribute("title") ?? "",
-        longFileTruncated: Boolean(longLabel && longLabel.scrollWidth > longLabel.clientWidth),
+        longFileTruncated: Boolean(
+          longLabel && longLabel.scrollWidth > longLabel.clientWidth,
+        ),
         mediaSize: media
           ? {
               height: Math.round(media.getBoundingClientRect().height),
@@ -279,35 +318,50 @@ function readComposerLayout() {
 }
 
 async function assertComposerRemoveVisibility() {
-  const first = await $("[data-composer-attachment-kind] [data-composer-attachment-remove]");
+  const first = await $(
+    "[data-composer-attachment-kind] [data-composer-attachment-remove]",
+  );
   await first.waitForExist({ timeout: 15_000 });
-  expect(Number(await first.getCSSProperty("opacity").then((value) => value.value))).toBe(0);
+  expect(
+    Number(await first.getCSSProperty("opacity").then((value) => value.value)),
+  ).toBe(0);
   await first.moveTo();
   const card = await first.parentElement();
   await card.moveTo();
   await browser.waitUntil(
-    async () => Number(await first.getCSSProperty("opacity").then((value) => value.value)) === 1,
+    async () =>
+      Number(
+        await first.getCSSProperty("opacity").then((value) => value.value),
+      ) === 1,
     { timeout: 5_000, timeoutMsg: "桌面 hover 后删除按钮没有显示" },
   );
   await browser.execute((element) => (element as HTMLElement).focus(), first);
-  expect(Number(await first.getCSSProperty("opacity").then((value) => value.value))).toBe(1);
+  expect(
+    Number(await first.getCSSProperty("opacity").then((value) => value.value)),
+  ).toBe(1);
   await sendRendererEmulationCommand("Emulation.setTouchEmulationEnabled", {
     enabled: true,
     maxTouchPoints: 1,
   });
   await browser.waitUntil(
-    async () => browser.execute(() => window.matchMedia("(hover: none)").matches),
+    async () =>
+      browser.execute(() => window.matchMedia("(hover: none)").matches),
     { timeout: 5_000, timeoutMsg: "renderer 没有进入 touch/hover:none 模式" },
   );
-  expect(Number(await first.getCSSProperty("opacity").then((value) => value.value))).toBe(1);
-  await sendRendererEmulationCommand("Emulation.setTouchEmulationEnabled", { enabled: false });
+  expect(
+    Number(await first.getCSSProperty("opacity").then((value) => value.value)),
+  ).toBe(1);
+  await sendRendererEmulationCommand("Emulation.setTouchEmulationEnabled", {
+    enabled: false,
+  });
 }
 
 async function assertThemeSurfaces() {
   for (const theme of ["zai-light", "zai-dark"] as const) {
     const changed = await browser.execute((nextTheme) => {
-      const setTheme = (window as typeof window & { __testActions?: Record<string, unknown> })
-        .__testActions?.setTheme;
+      const setTheme = (
+        window as typeof window & { __testActions?: Record<string, unknown> }
+      ).__testActions?.setTheme;
       if (typeof setTheme !== "function") return false;
       (setTheme as (value: string) => void)(nextTheme);
       return true;
@@ -316,11 +370,14 @@ async function assertThemeSurfaces() {
     await browser.waitUntil(
       () =>
         browser.execute(() => {
-          const card = document.querySelector<HTMLElement>("[data-composer-attachment-kind]");
-          const pill = document.querySelector<HTMLElement>(
-            "[data-composer-context-attachments-row] > [role='button']",
+          const card = document.querySelector<HTMLElement>(
+            "[data-composer-attachment-kind]",
           );
-          return [card, pill].every((element) => {
+          // context 已并入编辑器正文，用编辑器内 chip 的样式面验证主题切换。
+          const chip = document.querySelector<HTMLElement>(
+            ".prompt-mention[data-mention-category='contexts']",
+          );
+          return [card, chip].every((element) => {
             if (!element) return false;
             const color = getComputedStyle(element).backgroundColor;
             return color !== "rgba(0, 0, 0, 0)" && color !== "transparent";
@@ -338,28 +395,41 @@ async function assertNarrowComposerWrap() {
     mobile: false,
     width: 520,
   });
-  await browser.waitUntil(() => browser.execute(() => window.innerWidth === 520), {
-    timeout: 5_000,
-    timeoutMsg: "窄 viewport 未生效",
-  });
+  await browser.waitUntil(
+    () => browser.execute(() => window.innerWidth === 520),
+    {
+      timeout: 5_000,
+      timeoutMsg: "窄 viewport 未生效",
+    },
+  );
   const state = await browser.execute(() => {
     const rows = [
-      document.querySelector<HTMLElement>("[data-composer-file-attachments-row]"),
-      document.querySelector<HTMLElement>("[data-composer-context-attachments-row]"),
+      document.querySelector<HTMLElement>(
+        "[data-composer-file-attachments-row]",
+      ),
+      // context 已并入编辑器正文，窄视口下只需确认文件附件行与编辑器都在输入框内。
+      document.querySelector<HTMLElement>("[data-composer-layout='stacked']"),
     ];
     return {
       noDocumentOverflow:
-        document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
       rowsContainedByComposer: rows.every((row) => {
         const composer = row?.closest("form")?.getBoundingClientRect();
         const rect = row?.getBoundingClientRect();
         return Boolean(
-          composer && rect && rect.left >= composer.left - 1 && rect.right <= composer.right + 1,
+          composer &&
+          rect &&
+          rect.left >= composer.left - 1 &&
+          rect.right <= composer.right + 1,
         );
       }),
     };
   });
-  expect(state).toEqual({ noDocumentOverflow: true, rowsContainedByComposer: true });
+  expect(state).toEqual({
+    noDocumentOverflow: true,
+    rowsContainedByComposer: true,
+  });
   await sendRendererEmulationCommand("Emulation.clearDeviceMetricsOverride");
 }
 
@@ -368,7 +438,10 @@ async function waitForSentLayout() {
   await browser.waitUntil(
     async () => {
       snapshot = await readSentLayout();
-      return snapshot.pillOrder.includes("selection") && snapshot.mediaKinds.length > 0;
+      return (
+        snapshot.pillOrder.includes("selection") &&
+        snapshot.mediaKinds.length > 0
+      );
     },
     { timeout: 30_000, timeoutMsg: "sent 附件布局没有收敛" },
   );
@@ -385,9 +458,15 @@ function readSentLayout() {
         item.querySelector("[data-v4-user-input-media-attachments]"),
       );
       const row = area?.parentElement;
-      const bubble = row?.querySelector<HTMLElement>("[data-v4-user-input-bubble]");
-      const media = area?.querySelector<HTMLElement>("[data-v4-user-input-media-attachments]");
-      const pills = area?.querySelector<HTMLElement>("[data-v4-user-input-attachment-pills]");
+      const bubble = row?.querySelector<HTMLElement>(
+        "[data-v4-user-input-bubble]",
+      );
+      const media = area?.querySelector<HTMLElement>(
+        "[data-v4-user-input-media-attachments]",
+      );
+      const pills = area?.querySelector<HTMLElement>(
+        "[data-v4-user-input-attachment-pills]",
+      );
       const pillChildren = Array.from(pills?.children ?? []) as HTMLElement[];
       const classify = (item: HTMLElement) => {
         if (item.dataset.v4UserInputAttachmentPill === "true") return "file";
@@ -398,16 +477,23 @@ function readSentLayout() {
         if (/conversation|对话/iu.test(label)) return "selection";
         return "unknown";
       };
-      const filePills = pillChildren.filter((item) => classify(item) === "file");
+      const filePills = pillChildren.filter(
+        (item) => classify(item) === "file",
+      );
       const areaRect = area?.getBoundingClientRect();
       const bubbleRect = bubble?.getBoundingClientRect();
       const rowRect = row?.getBoundingClientRect();
       return {
         areaBeforeBubble: Boolean(
-          area && bubble && area.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING,
+          area &&
+          bubble &&
+          area.compareDocumentPosition(bubble) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
         ),
         areaInsideBubble: Boolean(area && bubble?.contains(area)),
-        emptyUserRows: Array.from(document.querySelectorAll<HTMLElement>("[data-v4-row-id]"))
+        emptyUserRows: Array.from(
+          document.querySelectorAll<HTMLElement>("[data-v4-row-id]"),
+        )
           .filter((candidate) => candidate.classList.contains("group/user-row"))
           .filter(
             (candidate) =>
@@ -417,24 +503,34 @@ function readSentLayout() {
           ).length,
         fileNames: filePills
           .map((pill) => pill.textContent ?? "")
-          .flatMap((text) => [longFile, secondFile].filter((name) => text.includes(name))),
+          .flatMap((text) =>
+            [longFile, secondFile].filter((name) => text.includes(name)),
+          ),
         filePillsAreRoundAndBorderless: filePills.every((pill) => {
           const style = getComputedStyle(pill);
           return (
             parseFloat(style.borderRadius) >= 999 ||
-            (style.borderStyle === "none" && parseFloat(style.borderRadius) >= 16)
+            (style.borderStyle === "none" &&
+              parseFloat(style.borderRadius) >= 16)
           );
         }),
         mediaBeforePills: Boolean(
-          media && pills && media.compareDocumentPosition(pills) & Node.DOCUMENT_POSITION_FOLLOWING,
+          media &&
+          pills &&
+          media.compareDocumentPosition(pills) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
         ),
         mediaKinds: Array.from(media?.children ?? []).map((item) =>
           item.querySelector("video") ? "video" : "image",
         ),
         bubbleWidth: bubbleRect?.width ?? 0,
-        pillOrder: pillChildren.map(classify).filter((kind) => kind !== "unknown"),
+        pillOrder: pillChildren
+          .map(classify)
+          .filter((kind) => kind !== "unknown"),
         rightEdgesAligned: Boolean(
-          areaRect && bubbleRect && Math.abs(areaRect.right - bubbleRect.right) <= 2,
+          areaRect &&
+          bubbleRect &&
+          Math.abs(areaRect.right - bubbleRect.right) <= 2,
         ),
         rowWidth: rowRect?.width ?? 0,
       };
@@ -445,11 +541,8 @@ function readSentLayout() {
   );
 }
 
-async function assertContextHoverAlignment(surface: "composer" | "sent") {
-  const selector =
-    surface === "composer"
-      ? "[data-composer-context-attachments-row] > [role='button']"
-      : "[data-v4-user-input-attachment-pills] > [role='button']";
+async function assertContextHoverAlignment() {
+  const selector = "[data-v4-user-input-attachment-pills] > [role='button']";
   const trigger = await $(selector);
   await trigger.waitForExist({ timeout: 15_000 });
   await trigger.moveTo();
@@ -458,14 +551,24 @@ async function assertContextHoverAlignment(surface: "composer" | "sent") {
   const [triggerRect, contentRect] = await Promise.all([
     trigger
       .getElement()
-      .then((element) => browser.execute((item) => item.getBoundingClientRect().toJSON(), element)),
+      .then((element) =>
+        browser.execute(
+          (item) => item.getBoundingClientRect().toJSON(),
+          element,
+        ),
+      ),
     content
       .getElement()
-      .then((element) => browser.execute((item) => item.getBoundingClientRect().toJSON(), element)),
+      .then((element) =>
+        browser.execute(
+          (item) => item.getBoundingClientRect().toJSON(),
+          element,
+        ),
+      ),
   ]);
-  if (surface === "composer")
-    expect(Math.abs(triggerRect.left - contentRect.left)).toBeLessThanOrEqual(3);
-  else expect(Math.abs(triggerRect.right - contentRect.right)).toBeLessThanOrEqual(3);
+  expect(Math.abs(triggerRect.right - contentRect.right)).toBeLessThanOrEqual(
+    3,
+  );
   await browser.keys("Escape");
 }
 
@@ -477,19 +580,28 @@ async function assertNarrowSentWrap() {
     width: 520,
   });
   const state = await browser.execute(() => {
-    const row = document.querySelector<HTMLElement>("[data-v4-user-input-attachment-pills]");
+    const row = document.querySelector<HTMLElement>(
+      "[data-v4-user-input-attachment-pills]",
+    );
     const userRow = row?.closest<HTMLElement>("[data-row-id]");
-    const bubble = userRow?.querySelector<HTMLElement>("[data-v4-user-input-bubble]");
+    const bubble = userRow?.querySelector<HTMLElement>(
+      "[data-v4-user-input-bubble]",
+    );
     const children = Array.from(row?.children ?? []) as HTMLElement[];
-    const tops = new Set(children.map((item) => Math.round(item.getBoundingClientRect().top)));
+    const tops = new Set(
+      children.map((item) => Math.round(item.getBoundingClientRect().top)),
+    );
     const right = row?.getBoundingClientRect().right ?? 0;
     const bubbleWidth = bubble?.getBoundingClientRect().width ?? 0;
     const userRowWidth = userRow?.getBoundingClientRect().width ?? 0;
     return {
       bubbleWithinContainer: bubbleWidth > 0 && bubbleWidth <= userRowWidth + 2,
       noDocumentOverflow:
-        document.documentElement.scrollWidth <= document.documentElement.clientWidth,
-      rightAligned: children.every((item) => item.getBoundingClientRect().right <= right + 1),
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+      rightAligned: children.every(
+        (item) => item.getBoundingClientRect().right <= right + 1,
+      ),
       wrapped: tops.size > 1,
     };
   });
@@ -508,13 +620,19 @@ async function assertDesktopAndTouchActions() {
   const actions = await copy.parentElement();
   await browser.action("pointer").move({ x: 4, y: 4 }).perform();
   await browser.waitUntil(
-    async () => Number(await actions.getCSSProperty("opacity").then((value) => value.value)) === 0,
+    async () =>
+      Number(
+        await actions.getCSSProperty("opacity").then((value) => value.value),
+      ) === 0,
     { timeout: 5_000, timeoutMsg: "desktop 非 hover 状态下消息操作栏没有隐藏" },
   );
   const row = await actions.parentElement();
   await row.moveTo();
   await browser.waitUntil(
-    async () => Number(await actions.getCSSProperty("opacity").then((value) => value.value)) === 1,
+    async () =>
+      Number(
+        await actions.getCSSProperty("opacity").then((value) => value.value),
+      ) === 1,
     { timeout: 5_000, timeoutMsg: "desktop hover 后消息操作栏没有显示" },
   );
 }
@@ -524,7 +642,9 @@ async function waitForEditLayout(rowId: number) {
   await browser.waitUntil(
     async () => {
       snapshot = await readEditLayout(rowId);
-      return snapshot.contextCount === 4 && snapshot.attachmentKinds.length === 3;
+      return (
+        snapshot.contextCount === 4 && snapshot.attachmentKinds.length === 3
+      );
     },
     { timeout: 15_000, timeoutMsg: "edit 附件/context 布局没有收敛" },
   );
@@ -534,20 +654,33 @@ async function waitForEditLayout(rowId: number) {
 function readEditLayout(rowId: number) {
   return browser.execute(
     (id, inputTestId) => {
-      const group = document.querySelector<HTMLElement>(`[data-testid="v4-row-attachments-${id}"]`);
+      const group = document.querySelector<HTMLElement>(
+        `[data-testid="v4-row-attachments-${id}"]`,
+      );
       const cards = Array.from(
-        group?.querySelectorAll<HTMLElement>("[data-v4-user-edit-attachment-kind]") ?? [],
+        group?.querySelectorAll<HTMLElement>(
+          "[data-v4-user-edit-attachment-kind]",
+        ) ?? [],
       );
       const contextRow = document.querySelector<HTMLElement>(
         "[data-v4-user-edit-context-attachments-row]",
       );
-      const input = document.querySelector<HTMLElement>(`[data-testid="${inputTestId}"]`);
-      const visibleText = input?.innerText?.trim() ?? input?.textContent?.trim() ?? "";
+      const input = document.querySelector<HTMLElement>(
+        `[data-testid="${inputTestId}"]`,
+      );
+      const visibleText =
+        input?.innerText?.trim() ?? input?.textContent?.trim() ?? "";
       return {
-        attachmentHeights: cards.map((card) => Math.round(card.getBoundingClientRect().height)),
-        attachmentKinds: cards.map((card) => card.dataset.v4UserEditAttachmentKind ?? ""),
+        attachmentHeights: cards.map((card) =>
+          Math.round(card.getBoundingClientRect().height),
+        ),
+        attachmentKinds: cards.map(
+          (card) => card.dataset.v4UserEditAttachmentKind ?? "",
+        ),
         containsProtocolText:
-          /# userselect:|# Code comments:|# Web page elements:|# Presentation/iu.test(visibleText),
+          /# userselect:|# Code comments:|# Web page elements:|# Presentation/iu.test(
+            visibleText,
+          ),
         contextCount: contextRow?.children.length ?? 0,
         visibleText,
       };
@@ -559,7 +692,9 @@ function readEditLayout(rowId: number) {
 
 async function removeEditWebContext() {
   const removed = await browser.execute(() => {
-    const row = document.querySelector<HTMLElement>("[data-v4-user-edit-context-attachments-row]");
+    const row = document.querySelector<HTMLElement>(
+      "[data-v4-user-edit-context-attachments-row]",
+    );
     const pill = Array.from(row?.children ?? []).find((item) =>
       /web|网页/iu.test(item.getAttribute("aria-label") ?? ""),
     );
@@ -572,28 +707,33 @@ async function removeEditWebContext() {
 
 function readLastUserRowStructure() {
   return browser.execute(() => {
-    const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-row-id]")).filter(
-      (candidate) => candidate.classList.contains("group/user-row"),
-    );
+    const rows = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-row-id]"),
+    ).filter((candidate) => candidate.classList.contains("group/user-row"));
     const row = rows.at(-1);
     return {
-      hasAttachmentArea: Boolean(row?.querySelector("[data-v4-user-input-attachments]")),
+      hasAttachmentArea: Boolean(
+        row?.querySelector("[data-v4-user-input-attachments]"),
+      ),
       hasBubble: Boolean(row?.querySelector("[data-v4-user-input-bubble]")),
       text: row?.innerText ?? "",
     };
   });
 }
 
-async function installImageObjectUrlFailureForBlobSize(expectedBlobSize: number) {
-  const installed = await browser.electron.execute(async (electron, targetBlobSize) => {
-    const target = electron.BrowserWindow.getAllWindows().find(
-      (candidate) => !candidate.isDestroyed() && candidate.isVisible(),
-    );
-    if (!target) return false;
-    // Bug 原因：WebDriver executeScript 位于隔离 world，覆盖的 URL.createObjectURL
-    // 不会影响 React 所在的 renderer main world。通过 webContents 注入真实页面 world。
-    return target.webContents.executeJavaScript(
-      `(() => {
+async function installImageObjectUrlFailureForBlobSize(
+  expectedBlobSize: number,
+) {
+  const installed = await browser.electron.execute(
+    async (electron, targetBlobSize) => {
+      const target = electron.BrowserWindow.getAllWindows().find(
+        (candidate) => !candidate.isDestroyed() && candidate.isVisible(),
+      );
+      if (!target) return false;
+      // Bug 原因：WebDriver executeScript 位于隔离 world，覆盖的 URL.createObjectURL
+      // 不会影响 React 所在的 renderer main world。通过 webContents 注入真实页面 world。
+      return target.webContents.executeJavaScript(
+        `(() => {
       const host = window;
       if (host.__e2eOriginalCreateObjectURL) return false;
       const original = URL.createObjectURL.bind(URL);
@@ -614,9 +754,11 @@ async function installImageObjectUrlFailureForBlobSize(expectedBlobSize: number)
       };
       return true;
     })()`,
-      true,
-    );
-  }, expectedBlobSize);
+        true,
+      );
+    },
+    expectedBlobSize,
+  );
   expect(installed).toBe(true);
 }
 
@@ -647,7 +789,10 @@ async function waitForFailedSentImage() {
         state = await readFailedSentImage();
         return state.exists && state.title !== "" && !state.hasImage;
       },
-      { timeout: 15_000, timeoutMsg: "图片读取失败后没有降级为不可预览静态占位" },
+      {
+        timeout: 15_000,
+        timeoutMsg: "图片读取失败后没有降级为不可预览静态占位",
+      },
     );
   } catch (error) {
     const observations = await browser.electron.execute(async (electron) => {
@@ -660,20 +805,28 @@ async function waitForFailedSentImage() {
         true,
       );
     });
-    throw new Error(`图片读取失败 mock 未命中，实际 Blob: ${JSON.stringify(observations)}`, {
-      cause: error,
-    });
+    throw new Error(
+      `图片读取失败 mock 未命中，实际 Blob: ${JSON.stringify(observations)}`,
+      {
+        cause: error,
+      },
+    );
   }
   return state;
 }
 
 function readFailedSentImage() {
   return browser.execute((marker) => {
-    const row = Array.from(document.querySelectorAll<HTMLElement>("[data-row-id]")).find(
+    const row = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-row-id]"),
+    ).find(
       (candidate) =>
-        candidate.classList.contains("group/user-row") && candidate.innerText.includes(marker),
+        candidate.classList.contains("group/user-row") &&
+        candidate.innerText.includes(marker),
     );
-    const card = row?.querySelector<HTMLElement>("[data-v4-user-input-media-attachment='true']");
+    const card = row?.querySelector<HTMLElement>(
+      "[data-v4-user-input-media-attachment='true']",
+    );
     return {
       exists: Boolean(card),
       hasImage: Boolean(card?.querySelector("img")),
@@ -686,14 +839,19 @@ function readFailedSentImage() {
 async function openFirstSentImage() {
   const opened = await browser.execute((filename) => {
     const card = Array.from(
-      document.querySelectorAll<HTMLElement>("[data-v4-user-input-media-attachment='true']"),
-    ).find((candidate) => candidate.querySelector<HTMLImageElement>(`img[alt="${filename}"]`));
+      document.querySelectorAll<HTMLElement>(
+        "[data-v4-user-input-media-attachment='true']",
+      ),
+    ).find((candidate) =>
+      candidate.querySelector<HTMLImageElement>(`img[alt="${filename}"]`),
+    );
     card?.click();
     return Boolean(card);
   }, IMAGE_FILE);
   expect(opened).toBe(true);
   await browser.waitUntil(
-    () => browser.execute(() => Boolean(document.querySelector("[role='dialog']"))),
+    () =>
+      browser.execute(() => Boolean(document.querySelector("[role='dialog']"))),
     { timeout: 10_000, timeoutMsg: "首条消息图片没有打开 gallery" },
   );
 }
@@ -701,18 +859,25 @@ async function openFirstSentImage() {
 function readOpenGalleryState() {
   return browser.execute(() => {
     const dialog = document.querySelector<HTMLElement>("[role='dialog']");
-    const labels = Array.from(dialog?.querySelectorAll("button[aria-label]") ?? []).map(
-      (button) => button.getAttribute("aria-label") ?? "",
-    );
+    const labels = Array.from(
+      dialog?.querySelectorAll("button[aria-label]") ?? [],
+    ).map((button) => button.getAttribute("aria-label") ?? "");
     return {
-      hasNext: labels.some((label) => label === "Next image" || label === "下一张图片"),
-      hasPrevious: labels.some((label) => label === "Previous image" || label === "上一张图片"),
+      hasNext: labels.some(
+        (label) => label === "Next image" || label === "下一张图片",
+      ),
+      hasPrevious: labels.some(
+        (label) => label === "Previous image" || label === "上一张图片",
+      ),
       title: dialog?.querySelector("h2")?.textContent?.trim() ?? "",
     };
   });
 }
 
-async function sendRendererEmulationCommand(method: string, params: Record<string, unknown> = {}) {
+async function sendRendererEmulationCommand(
+  method: string,
+  params: Record<string, unknown> = {},
+) {
   const sent = await browser.electron.execute(
     async (electron, command, commandParams) => {
       const window = electron.BrowserWindow.getAllWindows().find(
@@ -734,5 +899,7 @@ async function clearRendererEmulation() {
   await sendRendererEmulationCommand("Emulation.setTouchEmulationEnabled", {
     enabled: false,
   }).catch(() => {});
-  await sendRendererEmulationCommand("Emulation.clearDeviceMetricsOverride").catch(() => {});
+  await sendRendererEmulationCommand(
+    "Emulation.clearDeviceMetricsOverride",
+  ).catch(() => {});
 }
