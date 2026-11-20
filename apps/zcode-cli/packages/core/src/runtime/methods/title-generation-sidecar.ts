@@ -156,10 +156,14 @@ async function generateTitleCandidateImpl(
   await this.appendEvent(modelRequestEvent, modelTraceContext);
   events.push(modelRequestEvent);
   const networkEventStartIndex = events.length;
-  const titleAbortSignal = AbortSignal.timeout(
-    positiveTimeoutMs(this.config.titleGeneration?.timeoutMs),
-  );
+  // title 跨 turn 存活，但不能跨所属 runtime 的关闭；超时与关闭共用实际请求取消链。
+  const titleAbortSignal = AbortSignal.any([
+    this.shutdownSignal,
+    AbortSignal.timeout(positiveTimeoutMs(this.config.titleGeneration?.timeoutMs)),
+  ]);
+  titleAbortSignal.throwIfAborted();
   const modelStartedAt = Date.now();
+  using statusSink = this.createModelStatusSink(modelTraceContext, events);
   const invocationContext = {
     metadata: traceContextToLogContext(modelTraceContext),
     modelCall: {
@@ -169,7 +173,7 @@ async function generateTitleCandidateImpl(
           : ("session_title_generation" as const),
       reasoning: { requestedLevel: model.options.reasoningLevel },
     },
-    statusSink: this.createModelStatusSink(modelTraceContext, events),
+    statusSink,
     traceContext: modelTraceContext,
     refreshRuntimeHeadersBeforeAttempt: createRefreshRuntimeHeadersBeforeModelAttempt(this, {
       abortSignal: titleAbortSignal,

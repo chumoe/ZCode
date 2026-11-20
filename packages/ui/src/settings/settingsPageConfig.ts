@@ -1,9 +1,12 @@
 import {
   Archive,
+  Share2,
+  Folders,
   Monitor,
   Moon,
   Settings,
   Settings2,
+  SlidersHorizontal,
   Package,
   Bot,
   Palette,
@@ -20,6 +23,8 @@ import {
   HardDrive,
   Keyboard,
   FileSearch,
+  RefreshCw,
+  User,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
 import type { Theme } from "@/useTheme.js";
@@ -74,6 +79,20 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     icon: Package,
     titleId: "settings.modelProviderTitle",
     groupId: "basics",
+  },
+  // 个性化（用户自定义指令）是 Agent 能力组的第一项：编辑 ~/.zcode/AGENTS.md，
+  // 对所有会话生效（spec：docs/ui/settings-personalization.md）。
+  {
+    id: "personalization",
+    icon: User,
+    titleId: "settings.personalization.title",
+    groupId: "agentCapabilities",
+  },
+  {
+    id: "agentBehavior",
+    icon: SlidersHorizontal,
+    titleId: "settings.agentBehavior.title",
+    groupId: "agentCapabilities",
   },
   {
     id: "memory",
@@ -160,16 +179,38 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "settings.workspaceFileSearch.title",
     groupId: "basics",
   },
+  // 数据同步是「数据与统计」的第一项（docs/remote/data-sync.md），仅桌面端显示。
+  {
+    id: "dataSync",
+    icon: RefreshCw,
+    titleId: "remoteSync.title",
+    contentTitleId: "remoteSync.title",
+    groupId: "dataAndStats",
+  },
   {
     id: "usage",
     icon: BarChart3,
     titleId: "settings.usageTitle",
     groupId: "dataAndStats",
   },
+  // 项目管理排在归档管理之前（docs/superpowers/specs/2026-10-24-project-management.md）。
+  {
+    id: "projects",
+    icon: Folders,
+    titleId: "projectManagement.nav",
+    groupId: "dataAndStats",
+  },
   {
     id: "archives",
     icon: Archive,
     titleId: "archives.nav",
+    groupId: "dataAndStats",
+  },
+  // 分享管理排在归档管理之后，仅桌面端（docs/conversation-share-v1.md「设置页分享管理」）。
+  {
+    id: "shares",
+    icon: Share2,
+    titleId: "conversationShare.manage.nav",
     groupId: "dataAndStats",
   },
   // 暂时隐藏设置页里的 Migration 入口，只保留页面实现，后续可以直接恢复这一项。
@@ -229,9 +270,16 @@ export const SETTINGS_SECTION_GROUPS = BASE_SETTINGS_SECTION_GROUPS.map((group) 
 
 export type { SettingsSectionId };
 
+/** 依赖本机 Source Server 管理与设备连接的设置页，Web 与手机远控不显示。 */
+const DESKTOP_ONLY_SETTINGS_SECTIONS = new Set<SettingsSectionId>([
+  "remoteDevices",
+  "dataSync",
+  "shares",
+]);
+
 export function isSettingsSectionAvailable(
   section: SettingsSectionId,
   isDesktop: boolean,
 ): boolean {
-  return isDesktop || section !== "remoteDevices";
+  return isDesktop || !DESKTOP_ONLY_SETTINGS_SECTIONS.has(section);
 }

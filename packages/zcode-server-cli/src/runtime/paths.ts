@@ -9,6 +9,7 @@ export interface ServerLayout {
   readonly runDir: string;
   readonly currentFile: string;
   readonly pendingFile: string;
+  readonly downgradeMarkerFile: string;
   readonly installFile: string;
   readonly componentsCacheDir: string;
   readonly stableBinDir: string;
@@ -20,6 +21,8 @@ export interface ServerLayout {
   readonly uninstalledFile: string;
   readonly updateTransactionFile: string;
   readonly updateLockFile: string;
+  /** Supervisor 写出第一份状态前失败时的诊断摘要；不参与任何状态判断（R2 §7.1）。 */
+  readonly supervisorStartupFailureFile: string;
 }
 
 export function getDefaultServerDataRoot(): string {
@@ -37,6 +40,7 @@ export function resolveServerLayout(serverRoot = getDefaultServerDataRoot()): Se
     runDir,
     currentFile: join(root, "current.json"),
     pendingFile: join(root, "pending.json"),
+    downgradeMarkerFile: join(root, "downgrade.json"),
     installFile: join(root, "install.json"),
     componentsCacheDir: join(root, "cache", "components"),
     stableBinDir: join(root, "bin"),
@@ -51,6 +55,7 @@ export function resolveServerLayout(serverRoot = getDefaultServerDataRoot()): Se
     uninstalledFile: join(root, "uninstalled.json"),
     updateTransactionFile: join(root, "update-transaction.json"),
     updateLockFile: join(runDir, "update.lock"),
+    supervisorStartupFailureFile: join(runDir, "supervisor-startup-failure.json"),
   };
 }
 

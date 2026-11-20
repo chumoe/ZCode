@@ -1,4 +1,15 @@
 import { installPluginSandboxHostBridge } from "./pluginSandbox/hostBridge.js";
+import type {
+  ExtensionNotificationClick,
+  ExtensionNotificationPayload,
+  NotificationsShowResult,
+} from "@zcode/shared/extension-host";
+import {
+  APP_NAVIGATION_IPC,
+  appNavigationRendererMessageSchema,
+  appNavigationRendererIpcSchema,
+  type AppNavigationRendererMessage,
+} from "#src/app-control-navigation/contract.js";
 import {
   databaseStartupControlSchema,
   databaseStartupStateSchema,
@@ -31,7 +42,6 @@ contextBridge.exposeInMainWorld("__ZCODE_DEVICE_ID__", parseDeviceIdFromArgs());
 import type {
   AppSettings,
   ApplicationIconRequest,
-  BindRemoteWorkspaceSessionContextResult,
   BindRemoteWorkspaceSessionContextIpcResult,
   BrowserViewOperationPayload,
   BrowserGuestAttachResult,
@@ -41,6 +51,7 @@ import type {
   BrowserViewViewportChangedPayload,
   BrowserViewCloseTabNotification,
   BrowserViewCloseTabRequest,
+  BrowserViewPromoteDraftTabsRequest,
   BrowserViewResidencyReportPayload,
   BrowserViewResidencyTransitionPayload,
   BrowserViewRestoredTabShell,
@@ -60,6 +71,7 @@ import type {
   OAuthStateRegistration,
   WebRemoteControlAuthStateChange,
   OpenInEditorOptions,
+  FileApplicationTarget,
   RemoteTarget,
   TaskNotificationPayload,
   TelemetryRendererContext,
@@ -78,10 +90,17 @@ import type {
   SaveFileRequest,
   SaveFileResult,
   PrintPageToPdfResult,
+  MicrophoneAccessResetResult,
+  MicrophoneAccessResult,
+  MicrophoneSettingsTarget,
+  CaptureBrowserGuestPageRequest,
+  CaptureBrowserGuestPageResult,
   SSHConfigAliasOption,
   WebRemoteControlContext,
   WebRemoteControlReconnectWorkspaceRequest,
   WebRemoteControlReconnectWorkspaceResult,
+  WebRemoteControlRendererActionRequest,
+  WebRemoteControlRendererActionResult,
   WebRemoteControlStatus,
   WebRemoteControlWorkspaceTarget,
   RemoteConnectionRuntimeLog,
@@ -93,7 +112,6 @@ import type {
   ConfigureFinalArmsCustomEventE2ERequest,
   FinalArmsCustomEventE2EEntry,
 } from "@zcode/shared";
-import { unwrapRemoteWorkspaceBindResult } from "./remoteWorkspaceBindBridge.js";
 import {
   InternalChannels,
   PlatformChannels,
@@ -290,12 +308,9 @@ contextBridge.exposeInMainWorld("zcode", {
     workspacePath: string;
     workspaceIdentity?: string;
     workspacePurpose?: import("@zcode/shared").WorkspacePurpose;
-  }): Promise<BindRemoteWorkspaceSessionContextResult> =>
-    ipcRenderer
-      .invoke(PlatformChannels.BindRemoteWorkspaceSessionContext, context)
-      .then((result: BindRemoteWorkspaceSessionContextIpcResult) =>
-        unwrapRemoteWorkspaceBindResult(result),
-      ),
+  }): Promise<BindRemoteWorkspaceSessionContextIpcResult> =>
+    // 原样返回结构化结果：在 preload 抛出的 Error 跨 contextBridge 会丢失 code，由 renderer 还原。
+    ipcRenderer.invoke(PlatformChannels.BindRemoteWorkspaceSessionContext, context),
   startWebRemoteControl: (context: WebRemoteControlContext) =>
     ipcRenderer.invoke(PlatformChannels.StartWebRemoteControl, context),
   stopWebRemoteControl: (): Promise<void> =>
@@ -341,6 +356,20 @@ contextBridge.exposeInMainWorld("zcode", {
   /** 将当前页面的 print 媒体版面导出为 PDF（Chromium 打印引擎，矢量文本） */
   printPageToPdf: (): Promise<PrintPageToPdfResult> =>
     ipcRenderer.invoke(PlatformChannels.PrintToPdf),
+  /** 语音输入：检查并按需请求系统麦克风权限 */
+  ensureMicrophoneAccess: (): Promise<MicrophoneAccessResult> =>
+    ipcRenderer.invoke(PlatformChannels.MicrophoneAccess),
+  /** 语音输入：macOS 重置本 App 的麦克风授权记录并重新请求 */
+  resetMicrophoneAccess: (): Promise<MicrophoneAccessResetResult> =>
+    ipcRenderer.invoke(PlatformChannels.ResetMicrophoneAccess),
+  /** 语音输入：打开系统麦克风权限 / 声音输入设置页 */
+  openMicrophoneSettings: (target: MicrophoneSettingsTarget): Promise<boolean> =>
+    ipcRenderer.invoke(PlatformChannels.OpenMicrophoneSettings, target),
+  /** 在 main 截取内置浏览器 guest 当前视口为 PNG（renderer 侧 <webview>.capturePage 会崩溃） */
+  captureBrowserGuestPage: (
+    payload: CaptureBrowserGuestPageRequest,
+  ): Promise<CaptureBrowserGuestPageResult> =>
+    ipcRenderer.invoke(PlatformChannels.CaptureBrowserGuestPage, payload),
   /** 从系统拖拽/文件输入得到的 Web File 解析真实本地路径 */
   getPathForFile: (file: File): string | null => {
     // Electron 32 起移除了非标准 File.path，renderer 不能再直接从拖拽 File 上取路径。
@@ -405,6 +434,27 @@ contextBridge.exposeInMainWorld("zcode", {
     ipcRenderer.on(PlatformChannels.WebRemoteControlReconnectWorkspace, handler);
     return () =>
       ipcRenderer.removeListener(PlatformChannels.WebRemoteControlReconnectWorkspace, handler);
+  },
+  onWebRemoteControlRendererAction: (
+    callback: (
+      request: WebRemoteControlRendererActionRequest,
+    ) => Promise<WebRemoteControlRendererActionResult>,
+  ) => {
+    const handler = async (event: Electron.IpcRendererEvent, payload: unknown) => {
+      const request = payload as WebRemoteControlRendererActionRequest;
+      try {
+        event.sender.send(PlatformChannels.WebRemoteControlRendererAction, await callback(request));
+      } catch (error) {
+        event.sender.send(PlatformChannels.WebRemoteControlRendererAction, {
+          requestId: request.requestId,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        } satisfies WebRemoteControlRendererActionResult);
+      }
+    };
+    ipcRenderer.on(PlatformChannels.WebRemoteControlRendererAction, handler);
+    return () =>
+      ipcRenderer.removeListener(PlatformChannels.WebRemoteControlRendererAction, handler);
   },
   /** 同步当前窗口的未读 task 数到 main 进程 */
   syncWindowUnreadCount: (count: number) =>
@@ -476,6 +526,16 @@ contextBridge.exposeInMainWorld("zcode", {
   ): Promise<EmbeddedBrowserSitePermissionsSnapshot> =>
     ipcRenderer.invoke(PlatformChannels.ResetEmbeddedBrowserSitePermission, request),
   /** 注册 agent 首次 browser 命令建好受控 view 的回调（自动开 browser-use tab），返回 disposer */
+  onBrowserViewDownloadStarted: (
+    callback: (payload: { webContentsId: number; urls: string[] }) => void,
+  ): (() => void) => {
+    const handler = (_event: unknown, payload: { webContentsId: number; urls: string[] }) =>
+      callback(payload);
+    ipcRenderer.on(PlatformChannels.BrowserViewDownloadStarted, handler);
+    return () => {
+      ipcRenderer.removeListener(PlatformChannels.BrowserViewDownloadStarted, handler);
+    };
+  },
   onBrowserViewReady: (
     callback: (payload: {
       workspaceKey: string;
@@ -673,11 +733,30 @@ contextBridge.exposeInMainWorld("zcode", {
     ipcRenderer.on(PlatformChannels.DesktopZoomLevelChanged, handler);
     return () => ipcRenderer.removeListener(PlatformChannels.DesktopZoomLevelChanged, handler);
   },
+  /** 用户点了扩展通知（§18.1 H8）：Main 已聚焦窗口，带插件 id 与要打开的视图。返回 disposer。 */
+  onExtensionNotificationClick: (
+    callback: (click: ExtensionNotificationClick) => void,
+  ): (() => void) => {
+    const handler = (_event: unknown, click: ExtensionNotificationClick) => callback(click);
+    ipcRenderer.on(PlatformChannels.ExtensionNotificationClick, handler);
+    return () => ipcRenderer.removeListener(PlatformChannels.ExtensionNotificationClick, handler);
+  },
   /** 注册用户点击系统通知后跳转到对应任务的回调，返回 disposer */
   onTaskNotificationClick: (callback: (taskId: string) => void): (() => void) => {
     const handler = (_event: unknown, taskId: string) => callback(taskId);
     ipcRenderer.on(PlatformChannels.TaskNotificationClick, handler);
     return () => ipcRenderer.removeListener(PlatformChannels.TaskNotificationClick, handler);
+  },
+  onAppControlNavigationMessage: (callback: (message: AppNavigationRendererMessage) => void) => {
+    const listener = (_event: unknown, payload: unknown) => {
+      const parsed = appNavigationRendererMessageSchema.safeParse(payload);
+      if (parsed.success) callback(parsed.data);
+    };
+    ipcRenderer.on(APP_NAVIGATION_IPC, listener);
+    return () => ipcRenderer.removeListener(APP_NAVIGATION_IPC, listener);
+  },
+  sendAppControlNavigation: (payload: unknown) => {
+    ipcRenderer.send(APP_NAVIGATION_IPC, appNavigationRendererIpcSchema.parse(payload));
   },
   /** 打开外部 URL（用于 OAuth 跳转浏览器） */
   openExternal: (url: string) => ipcRenderer.send(PlatformChannels.OpenExternal, url),
@@ -779,6 +858,10 @@ contextBridge.exposeInMainWorld("zcode", {
   /** 通过 main process 触发原生任务通知 */
   showTaskNotification: (payload: TaskNotificationPayload) =>
     ipcRenderer.send(PlatformChannels.ShowTaskNotification, payload),
+  showExtensionNotification: (
+    payload: ExtensionNotificationPayload,
+  ): Promise<NotificationsShowResult> =>
+    ipcRenderer.invoke(PlatformChannels.ShowExtensionNotification, payload),
   /** 导出日志：打包 ~/.zcode/v2 及外部 agent 日志为 zip 并在 Finder 中显示 */
   exportLogs: (): Promise<{
     success: boolean;
@@ -788,6 +871,8 @@ contextBridge.exposeInMainWorld("zcode", {
   /** 截取当前窗口，用于错误反馈携带现场画面 */
   captureWindowScreenshot: () => ipcRenderer.invoke(PlatformChannels.CaptureWindowScreenshot),
   // CDP-on-guest pivot：`<webview>` guest dom-ready 后上报 webContentsId 给 main attach。
+  browserViewLoadUrl: (payload: { webContentsId: number; url: string }): Promise<void> =>
+    ipcRenderer.invoke(PlatformChannels.BrowserViewLoadUrl, payload),
   browserViewAttachGuest: (payload: {
     key: string;
     webContentsId: number;
@@ -805,6 +890,8 @@ contextBridge.exposeInMainWorld("zcode", {
     ipcRenderer.invoke(PlatformChannels.BrowserViewCloseTabFromRenderer, payload),
   browserViewReportResidency: (payload: BrowserViewResidencyReportPayload): Promise<void> =>
     ipcRenderer.invoke(PlatformChannels.BrowserViewReportResidency, payload),
+  browserViewPromoteDraftTabs: (payload: BrowserViewPromoteDraftTabsRequest): Promise<string[]> =>
+    ipcRenderer.invoke(PlatformChannels.BrowserViewPromoteDraftTabs, payload),
   browserViewSuspendReady: (payload: { tabId: string; generation: number }): Promise<void> =>
     ipcRenderer.invoke(PlatformChannels.BrowserViewSuspendReady, payload),
   browserViewEnsureResident: (payload: BrowserViewCloseTabRequest): Promise<void> =>
@@ -903,6 +990,10 @@ contextBridge.exposeInMainWorld("zcode", {
   /** 获取已安装的编辑器/终端列表（含图标） */
   getInstalledEditors: (filePath?: string) =>
     ipcRenderer.invoke(PlatformChannels.GetInstalledEditors, filePath),
+  getFileApplications: (target: FileApplicationTarget) =>
+    ipcRenderer.invoke(PlatformChannels.GetFileApplications, target),
+  openFileWithApplication: (applicationId: string, target: FileApplicationTarget) =>
+    ipcRenderer.invoke(PlatformChannels.OpenFileWithApplication, { applicationId, target }),
   getApplicationIcon: (request: string | ApplicationIconRequest) =>
     ipcRenderer.invoke(PlatformChannels.GetApplicationIcon, request),
   /** 用指定编辑器打开路径 */
@@ -956,6 +1047,12 @@ ipcRenderer.on(InternalChannels.ScopedServicePort, (event, payload: unknown) => 
     "*",
     [port],
   );
+});
+
+ipcRenderer.on(InternalChannels.ScopedServicePortReleased, (_event, payload: unknown) => {
+  // 与 port 一样交给 renderer world；是否释放由 renderer 按当前登记判断。
+  if (!payload || typeof payload !== "object") return;
+  window.postMessage({ ...payload, type: InternalChannels.ScopedServicePortReleased }, "*");
 });
 
 ipcRenderer.on(

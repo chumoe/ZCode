@@ -10,6 +10,7 @@ import type {
 import type { IServiceAccessor } from "@zcode/services";
 import type { ReactNode } from "react";
 import type { CreateTaskOptions, CreateTaskRequest } from "@/app-shell/types.js";
+import type { SettingsShareTaskTarget } from "@/conversation-share-interaction/SettingsShareManagement.js";
 
 export type WebRemoteControlTerminalTransportState =
   | "idle"
@@ -68,6 +69,7 @@ export interface RootProps {
   initialTaskDraft?: CreateTaskOptions;
   /** 本客户端连接目标的稳定身份，手机跨设备切换必须隔离草稿和 Recent。 */
   composerClientNamespace?: string;
+  terminalOwnerId?: string;
   /** Electron renderer 传 true，用于启用自绘标题栏 */
   isDesktop?: boolean;
   /** macOS 桌面端需要给红绿灯按钮预留安全区 */
@@ -110,6 +112,8 @@ export interface WorkspaceSettingsLayerProps {
   windowsWindowControlsRightPaddingPx?: number;
   captionWorkspacePath?: string | null;
   onBack?: () => void;
+  /** 设置页分享管理「跳转对话」；与 Root 层 SettingsPage 使用同一导航入口。 */
+  onOpenTask?: (target: SettingsShareTaskTarget) => void;
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onOpenWorkspace?: () => void;
   onOpenRemoteWorkspace?: () => void;

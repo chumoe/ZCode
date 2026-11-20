@@ -235,10 +235,6 @@ interface OpenRemoteWorkspaceFromHistoryParams {
     target: Parameters<IPlatformService["connectRemote"]>[0],
     requestId?: string,
   ) => Promise<string>;
-  resolveRemoteWorkspaceCanonicalPath: (
-    sessionId: string,
-    workspacePath: string,
-  ) => Promise<string>;
   bindRemoteWorkspaceScope: (
     sessionId: string,
     workspacePath: string,
@@ -556,6 +552,19 @@ export async function restoreSourceRemoteWorkspaceGroup(params: {
   }
 }
 
+/** tab 是目录 owner 的唯一事实；只认仍注册在 store 中的 session，断连残留的 id 不算 owner。 */
+function readLiveRemoteWorkspaceOwner(
+  tabStoreApi: RemoteWorkspaceTabStoreReader,
+  target: Pick<RemoteWorkspaceSessionEntry, "workspacePath" | "workspaceIdentity">,
+): string | undefined {
+  const key = buildWorkspaceSessionKey(target);
+  const sessionId = tabStoreApi
+    .getState()
+    .tabs.filter(isWorkspaceTab)
+    .find((tab) => buildWorkspaceSessionKey(tab) === key)?.remoteSessionId;
+  return sessionId && getRemoteWorkspaceSession(sessionId) ? sessionId : undefined;
+}
+
 function shouldKeepRemoteWorkspaceInTabs(params: {
   tabStoreApi: RemoteWorkspaceTabStoreReader;
   workspacePath: string;
@@ -615,7 +624,6 @@ export async function openRemoteWorkspaceFromHistoryEntry({
   setReconnectingRemoteWorkspaceKeys,
   loadCredential,
   connectRemoteWorkspaceTarget,
-  resolveRemoteWorkspaceCanonicalPath,
   bindRemoteWorkspaceScope,
   disposeRemoteWorkspaceSession,
   addTab,
@@ -666,7 +674,6 @@ export async function openRemoteWorkspaceFromHistoryEntry({
       setReconnectingRemoteWorkspaceKeys,
       loadCredential,
       connectRemoteWorkspaceTarget,
-      resolveRemoteWorkspaceCanonicalPath,
       bindRemoteWorkspaceScope,
       disposeRemoteWorkspaceSession,
       bindRemoteWorkspacePath,
@@ -682,6 +689,7 @@ export async function openRemoteWorkspaceFromHistoryEntry({
           workspacePath,
           workspaceIdentity,
         }),
+      readLiveWorkspaceOwner: (target) => readLiveRemoteWorkspaceOwner(tabStoreApi, target),
       onWorkspaceActivated: (target) => {
         logger.debug("[Root] 远程历史 workspace ready，提交 tab 与 draft 激活", target);
         onWorkspaceActivated?.(target);
@@ -1416,7 +1424,6 @@ export function useRemoteWorkspaceHistory({
           loadCredential: services.credentialService.load,
           getSettings: services.settingService.get,
           connectRemoteWorkspaceTarget,
-          resolveRemoteWorkspaceCanonicalPath,
           bindRemoteWorkspaceScope,
           disposeRemoteWorkspaceSession: handleCancelRemoteProject,
           bindRemoteWorkspacePath,
@@ -1432,6 +1439,7 @@ export function useRemoteWorkspaceHistory({
               workspacePath,
               workspaceIdentity,
             }),
+          readLiveWorkspaceOwner: (target) => readLiveRemoteWorkspaceOwner(tabStoreApi, target),
           onWorkspaceActivated: (target) => {
             logger.debug("[Root] 远程 workspace ready，提交 tab 与 draft 激活", target);
             onWorkspaceActivated?.(target);
@@ -1482,7 +1490,6 @@ export function useRemoteWorkspaceHistory({
       connectRemoteWorkspaceTarget,
       handleCancelRemoteProject,
       onWorkspaceActivated,
-      resolveRemoteWorkspaceCanonicalPath,
       resetLogsForWorkspaceKey,
       services.credentialService,
       services.settingService,
@@ -1955,10 +1962,21 @@ export function useRemoteWorkspaceHistory({
       const profile = snapshot?.profiles.find(
         (candidate) => candidate.profileId === device?.profileId,
       );
+      // Bug 原因（ZCT-2112984371086536704）：等待点（如需要安装）也会被记成失败；3.16.2 的记录只有
+      // 本地化文案。线路尚未识别时，旧逻辑用这段过期文案判成“连接失败”，不重连也不显示安装确认。
+      // 第一版修复在线路未识别时忽略全部记录，普通失败后每次点击又都静默重拨，打不开向导。
+      // 现在按记录的错误码区分：普通失败照常交给向导查看、不拨号；等待点或无码旧记录先重连，
+      // 由 Host 给出当前带码的结果和实际操作线路。线路已识别时仍按原逻辑使用项目级失败。
+      const recordFailureCode =
+        entry.lastConnectionErrorCode &&
+        resolveRemoteConnectionPresentation({ errorCode: entry.lastConnectionErrorCode }).status !==
+          "pending"
+          ? entry.lastConnectionErrorCode
+          : undefined;
       const presentation = resolveRemoteConnectionPresentation({
         ...device,
         attached: false,
-        projectError: entry.lastConnectionError,
+        projectError: device || recordFailureCode ? entry.lastConnectionError : undefined,
       });
       await requestRemoteProjectConnection({
         preference: {
@@ -1969,7 +1987,7 @@ export function useRemoteWorkspaceHistory({
         },
         presentation,
         failure: {
-          code: device?.errorCode,
+          code: device ? device.errorCode : recordFailureCode,
           message: device?.error ?? entry.lastConnectionError ?? "",
           logs: reconnectingRemoteWorkspaceLogsByWorkspaceKey[workspaceKey] ?? [],
         },
@@ -2006,7 +2024,6 @@ export function useRemoteWorkspaceHistory({
         setReconnectingRemoteWorkspaceKeys,
         loadCredential: services.credentialService.load,
         connectRemoteWorkspaceTarget,
-        resolveRemoteWorkspaceCanonicalPath,
         bindRemoteWorkspaceScope,
         disposeRemoteWorkspaceSession: handleCancelRemoteProject,
         addTab,
@@ -2023,7 +2040,6 @@ export function useRemoteWorkspaceHistory({
       commitRemoteWorkspaceSessionMutation,
       connectRemoteWorkspaceTarget,
       handleCancelRemoteProject,
-      resolveRemoteWorkspaceCanonicalPath,
       resetLogsForWorkspaceKey,
       onWorkspaceActivated,
       services.credentialService,

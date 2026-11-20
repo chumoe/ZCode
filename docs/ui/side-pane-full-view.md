@@ -1,6 +1,6 @@
 # Side Pane 完整视图
 
-状态：已实现（2026-10-16），E2E 已转正（2026-10-17）：`ui-shell/side-pane-full-view.test.ts`、`conversation-session/conversation-session-side-pane-full-view.test.ts`。仅桌面 Electron；普通 Web、手机远控 `/remote` 不提供入口。代码模块：`packages/ui/src/side-pane-full-view/`（managed，见其 `CONTRACT.md`）。
+状态：已实现（2026-10-16），E2E 已转正（2026-10-17）：`ui-shell/panels/side-pane-full-view.test.ts`、`conversation-session/branching/conversation-session-side-pane-full-view.test.ts`。仅桌面 Electron；普通 Web、手机远控 `/remote` 不提供入口。代码模块：`packages/ui/src/side-pane-full-view/`（managed，见其 `CONTRACT.md`）。
 
 ## 目标
 
@@ -35,6 +35,7 @@
 - `WorkspaceHeader` 不显示，面板 tab 栏取代它成为内容区顶栏；Windows/Linux 的窗口按钮仍在面板右上角。
 - 对话 tab 固定在第一位：聊天图标 + 当前任务标题（草稿显示「新任务」），不能关闭、不能拖动排序，没有「⋯」菜单（任务菜单仍在退出完整视图后的标题栏）。tab 栏是窗口拖拽区（`app-region: drag`），对话 tab 必须显式标为 `no-drag`，否则真实鼠标点击会被当成拖动窗口。
 - 点对话 tab：对话在面板内容区全宽显示（含底部终端）。点任意面板 tab：显示该 tab，同时出现浮动输入窗口。
+- 对话 tab 与面板 tab 之间切换时，宿主位置与尺寸在绘制前直接到位，输入框和回答气泡不得从整页尺寸收缩或跨屏移动。浮窗内部的展开、收起、聚焦操作栏与拖动松手后的吸附仍保留局部过渡；最小化与恢复沿用既有缩放淡入。单实例与草稿保持规则不变。
 - 面板外框在完整视图中是 `absolute inset-0 z-0`：只建立自己的层叠上下文，不抬高层级。插件 UI 页面不在面板 DOM 里，而是挂在 `body` 末尾的 fixed 停靠层（`[data-sandbox-page-parking]`，无 z-index）并按 tab 占位元素的坐标摆放；外框若用正的 z-index，会把不透明背景画在插件页面上面。对话内容都在宿主（`fixed z-30`）里，浮窗仍在插件页面之上。
 - 面板展开后的空标签集合由 `useAppPanels` 补建「新标签页」tab（见 `docs/ui/side-pane-tabs.md`），完整视图沿用；补建前的瞬间内容区显示同一个启动页，tab 栏只有对话 tab 与「+」。
 
@@ -117,7 +118,7 @@ slot 是面板 tab 栏下方的内容区。宿主通过 ResizeObserver 读取 sl
 - 浮窗形态下对话不使用空会话居中布局，输入区始终贴底，草稿推荐提示和草稿顶部的「选择项目 / 分支」栏都不显示（切到对话 tab 可选择项目）。
 - 输入框在浮窗形态下是单行布局：`[+] [输入区] [模式 / 模型等控件] [发送]` 排在同一行。输入区至少占一半宽度；控件放不下时沿用主输入框工具栏的逐级收起规则（先收文字，最后只留图标）。文字超过一行时输入区向上长高，左右按钮贴底。附件等 `topContent` 单独占输入行上方一整行。
 - 单行与普通两行布局共用同一棵 DOM 树，只切换样式：编辑器节点位置不变，在浮窗和对话 tab 之间切换不会重新挂载编辑器，草稿、光标和撤销历史都保留。只有「+」菜单按钮会换位置重新挂载。
-- 运行中占位：浮窗形态下对话运行时，输入框占位文字显示「工作中 {时长}」（`chat.history.workingFor`），时长与流式消息里运行中 work segment 的「工作中 N 秒」同值（同一个 `workStatus.durationMs`，每秒刷新），用同一个格式化函数（`formatConversationWorkDuration`，天 / 时 / 分 / 秒后缀，最多两段）。时长尚未产生时沿用原占位；对话 tab 与普通视图不变。
+- 运行中占位：浮窗形态下对话运行时，输入框占位文字显示「工作中 {时长}」（`chat.history.workingFor`），时长取 `workStatus.durationMs`（每秒刷新），浮窗占位保留整秒摘要，消息流底部使用十分之一秒，顶部运行标签不再展示；占位使用格式化函数（`formatConversationWorkDuration`，天 / 时 / 分 / 秒后缀，最多两段）。时长尚未产生时沿用原占位；对话 tab 与普通视图不变。
 - 回答气泡：浮窗形态下，一轮回答结束（出现一个已结束、最终回答为 complete、且不同于基线的回合）时，在浮窗上方（顶部吸附位置时在下方）显示一个气泡，只显示回答正文的纯文本前两行，不显示图标和标题。基线：浮窗第一次看到某个会话时，已结束的回合算看过，正在运行的回合不算；离开浮窗形态时清空基线，回到浮窗重新建立，所以在对话 tab 里看过的回答不会弹出。不要求看到「运行中」：回放或很快的回答可能在一次渲染里就从未开始变成已结束。
   - 只有两种方式让气泡消失：点左上角 ×；点气泡本身（同时把浮窗切到展开态显示消息流）。发送下一条消息时气泡保留，下一轮回答结束后替换为新回答。
   - 气泡按会话记录（只在内存里），切走再切回仍在；只在浮窗收起态显示，展开态和最小化时隐藏但不清除。

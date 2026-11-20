@@ -93,7 +93,6 @@ export {
 } from "./lib/fileDisplay.js";
 export type { FileDisplayDescriptor, FileDisplayOptions } from "./lib/fileDisplay.js";
 export { playTaskNotificationSound } from "./lib/taskNotificationSound.js";
-export { installDocumentHiddenMotionPause } from "./lib/documentHiddenMotionPause.js";
 export {
   applyUiFontSizePx,
   loadUiFontSizePx,
@@ -117,5 +116,9 @@ export { recordArmsCustomEventForE2E } from "./lib/armsCustomEventObservability.
 export { generateMobileDeviceFingerprint, setStreamClientId } from "./lib/streamClientId.js";
 export { GlobalDatabaseStartupLoading } from "./root/GlobalDatabaseStartupLoading.js";
 
-export { LocalTtftObserver, setLocalTtftObserver } from "@/v4/telemetry/localTtftObserver.js";
-export { ensurePendingTaskDraft } from "@/v4/composer/composerDraftStore.js";
+export { LocalTtftObserver, setLocalTtftObserver } from "@/v4/telemetry/local-ttft/contract.js";
+export {
+  ensurePendingTaskDraft,
+  readPendingTaskDraft,
+  readComposerWorkspaceScope,
+} from "@/v4/composer/composerDraftStore.js";

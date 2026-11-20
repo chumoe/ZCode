@@ -1,3 +1,4 @@
+import type { DraftPluginUiOpenRequest } from "@/plugin-ui/contract.js";
 import { withPluginTelemetry } from "@zcode/services";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { reportAppTelemetryEvent } from "@/lib/appTelemetry.js";
@@ -39,7 +40,8 @@ import type { PluginStoreActions } from "@/settings/PluginStoreCard.js";
 import {
   buildStoreItems,
   canUpdatePluginItem,
-  isPluginUpdatePending,
+  hasInstallableUpdate,
+  isStoreItemInstallBlocked,
   resolveItemDisplayName,
   resolvePluginDisplayName,
   type StorePluginItem,
@@ -66,6 +68,8 @@ interface PluginStorePageProps {
   sessionId?: string | null;
   remoteSessionId?: string | null;
   embedded?: boolean;
+  paneId?: string;
+  onOpenDraftUi?: (request: DraftPluginUiOpenRequest) => void;
   onBack?: () => void;
 }
 
@@ -82,6 +86,8 @@ export function PluginStorePage({
   sessionId,
   remoteSessionId,
   embedded = false,
+  paneId,
+  onOpenDraftUi,
   onBack,
 }: PluginStorePageProps) {
   const platform = usePlatform();
@@ -90,6 +96,8 @@ export function PluginStorePage({
   const { pluginManagementService, skillsService } = useServices();
   const usePluginManagementStore = useScopedPluginManagementStore(pluginManagementService);
   const pluginUi = useMarketPluginUi({
+    paneId,
+    onOpenDraftUi,
     workspacePath,
     workspaceIdentity,
     sessionId,
@@ -406,6 +414,8 @@ export function PluginStorePage({
 
   const handleInstall = useCallback(
     async (item: StorePluginItem) => {
+      // 示例提示词对未安装条目也走这里：不兼容的版本不能装（§4.3），按钮之外的入口同样挡住。
+      if (isStoreItemInstallBlocked(item)) return;
       const succeeded = item.restorable
         ? await restoreBuiltin(item.id, operationService)
         : await installPlugin(item.name, item.marketplace, operationService, "user");
@@ -440,7 +450,7 @@ export function PluginStorePage({
     }
     const pendingCount = usePluginManagementStore
       .getState()
-      .installedPlugins.filter((item) => isPluginUpdatePending(item.updateStatus)).length;
+      .installedPlugins.filter(hasInstallableUpdate).length;
     if (pendingCount > 0) {
       toast(
         intl.formatMessage(
@@ -491,16 +501,17 @@ export function PluginStorePage({
   const actions: PluginStoreActions = useMemo(
     () => ({
       onOpenDetail: openDetail,
-      // 打开 UI 只在会话右侧市场（embedded）提供；主导航市场整行进入详情。
-      onOpenUi: embedded
-        ? (item) =>
-            void pluginUi.open(
-              item.id,
-              item.info?.enabled
-                ? undefined
-                : () => setEnabled(item.id, true, operationService, "workspace"),
-            )
-        : undefined,
+      // 主导航交给根草稿，侧栏保留所属 pane 的绑定。
+      onOpenUi:
+        embedded || onOpenDraftUi
+          ? (item) =>
+              void pluginUi.open(
+                item.id,
+                item.info?.enabled
+                  ? undefined
+                  : () => setEnabled(item.id, true, operationService, "workspace"),
+              )
+          : undefined,
       onSetEnabled: (pluginId, enabled) => {
         void setEnabled(pluginId, enabled, operationService, "workspace");
       },
@@ -521,6 +532,7 @@ export function PluginStorePage({
       setEnabled,
       togglingPluginId,
       embedded,
+      onOpenDraftUi,
     ],
   );
 
@@ -553,7 +565,8 @@ export function PluginStorePage({
       ) : null}
       {view === "detail" ? (
         <Button variant="ghost" data-testid="plugin-store-detail-back" onClick={backToStore}>
-          {intl.formatMessage({ id: "settings.plugins.store.browseAll" })}
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          {intl.formatMessage({ id: "settings.plugins.store.back" })}
         </Button>
       ) : null}
       {view === "store" ? (
@@ -633,9 +646,9 @@ export function PluginStorePage({
             />
             <Button
               type="button"
-              variant="secondary"
+              variant="default"
               size="lg"
-              className="font-medium"
+              className="font-normal"
               data-testid="plugin-store-manage-open"
               onClick={() => setView("manage")}
             >
@@ -645,9 +658,10 @@ export function PluginStorePage({
         </div>
       ) : null}
 
+      {/* 来源错误可能带连续长路径；允许断行，避免窄屏内容被错误文本撑宽。 */}
       {error && !addSourceOpen ? (
         <div
-          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive"
+          className="break-words rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive"
           data-testid="plugin-store-error"
         >
           {error}
@@ -656,13 +670,20 @@ export function PluginStorePage({
 
       {view === "manage" ? (
         <div data-testid="plugin-store-manage" className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              data-testid="plugin-store-manage-back"
+              aria-label={intl.formatMessage({ id: "project.back" })}
+              onClick={backToStore}
+            >
+              <ArrowLeft className="size-4" aria-hidden="true" />
+            </Button>
             <h1 className="text-ui-xl font-semibold">
               {intl.formatMessage({ id: "settings.plugins.store.manageInstalled" })}
             </h1>
-            <Button variant="outline" data-testid="plugin-store-browse-all" onClick={backToStore}>
-              {intl.formatMessage({ id: "settings.plugins.store.browseAll" })}
-            </Button>
           </div>
           <PluginsSection
             mode="market"
@@ -680,7 +701,7 @@ export function PluginStorePage({
               if (intent === "add-marketplace") setAddSourceOpen(true);
             }}
             onOpenUi={
-              embedded
+              embedded || onOpenDraftUi
                 ? (item, target, enable) => {
                     if (
                       (target?.workspaceIdentity?.trim() || target?.workspacePath) !==

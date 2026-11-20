@@ -81,6 +81,11 @@ export interface CreateTaskOptions {
   initialPrompt?: string;
   /** 创建项目后的当前草稿交接，仅在 renderer 内存中传递。 */
   initialComposerDraft?: ComposerDraftHandoff;
+  /**
+   * 在新的受管 worktree 中准备草稿（docs/git/worktree.md §3.2）：Host 立即创建 worktree，
+   * 草稿迁入后由用户照常发送。仅本地项目；远程由 Host 拒绝。
+   */
+  worktree?: { startRef?: string };
   /** 与 initialPrompt canonical 前缀对应的结构化 mention；仅用于编辑器展示。 */
   initialPromptMention?: ComposerMentionPrefill;
   /** 新任务落在哪个 workspace；缺省取活动 workspace。 */
@@ -111,8 +116,12 @@ export type DeviceAdditionResult =
 
 /** 仅当前 renderer 内存中的原 owner 引用；不序列化草稿或凭据。 */
 export interface DeviceAdditionReturnTarget {
-  /** 已有设备连接留在原项目页；只有新增设备往返设置。 */
-  kind: "connect-device" | "add-device";
+  /**
+   * 已有设备连接留在原项目页；只有新增设备往返设置。
+   * data-sync：从「设置 → 数据同步」发起（连接已有设备或新增设备），完成后留在数据同步页，
+   * 不跳到「远程设备」页。
+   */
+  kind: "connect-device" | "add-device" | "data-sync";
   isCurrent(): boolean;
   /** 只投递连接层可见性；原 owner 决定自己的提交门禁。 */
   onVisibilityChange?(visible: boolean): void;
@@ -271,6 +280,7 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   activeTaskId: string | null;
   /** 右侧栏的正式会话归属 ID；草稿为空，不复制 pane 内部预热 session。 */
   sidePaneOwnerId: string | null;
+  handleSidePaneDraftPromotion: (sessionId: string) => void;
   activeTraceId: string | null;
   activeSessionId: string | null;
   activeTaskProvider: ZCodeProvider | null;

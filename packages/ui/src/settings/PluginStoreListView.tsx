@@ -3,7 +3,7 @@ import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 /* eslint-disable max-lines -- 商店列表页把搜索/公开-社区-个人分段/Featured/分类折叠聚合成一个连贯浏览面，拆散反而难以维持 1:1 布局。 */
 import { useMemo, useState } from "react";
 import type { PluginStoreOrder, ZCodePluginMarketplaceSummary } from "@zcode/shared";
-import { ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID } from "@zcode/shared";
+import { isPluginStoreVisible } from "@zcode/shared";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { PluginStoreAvatar } from "@/settings/PluginStoreAvatar.js";
@@ -26,7 +26,6 @@ import { resolveMarketplaceDisplayName } from "@/settings/pluginSourceLabel.js";
 
 // 分类/市场分组手动收起后的展示数量；默认完整展示，避免较少的插件又被自动隐藏。
 const CATEGORY_VISIBLE_LIMIT = 6;
-const RETIRED_STORE_PLUGIN_ID = `restore-legacy-sessions@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID}`;
 
 export type { PluginStoreSegment } from "@/settings/pluginStoreListing.js";
 import type { PluginStoreSegment } from "@/settings/pluginStoreListing.js";
@@ -61,10 +60,7 @@ export function PluginStoreListView({
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   // 旧版会话恢复入口退出市场；统一过滤所有浏览投影，旧缓存/精选也不能重新露出。
   // 完整 ID 只命中官方插件，插件管理页继续使用原始条目管理已有安装。
-  const items = useMemo(
-    () => allItems.filter((item) => item.id !== RETIRED_STORE_PLUGIN_ID),
-    [allItems],
-  );
+  const items = useMemo(() => allItems.filter((item) => isPluginStoreVisible(item.id)), [allItems]);
 
   const segmentItems = useMemo(
     () => items.filter((item) => resolvePluginStoreSegment(item) === segment),
@@ -188,8 +184,8 @@ export function PluginStoreListView({
 
       {!keyword && uiItems.length > 0 ? (
         <section data-testid="plugin-store-ui-section">
-          <div className="pb-2">
-            <h2 className="text-ui-lg font-semibold">
+          <div className="px-2 pb-2">
+            <h2 className="text-ui-lg font-medium">
               {intl.formatMessage({ id: "settings.plugins.store.ui.title" })}
             </h2>
           </div>
@@ -303,8 +299,8 @@ function StoreSection({
 }) {
   return (
     <section className={className}>
-      <div className="pb-2">
-        <h2 className="text-ui-lg font-semibold text-foreground">{title}</h2>
+      <div className="px-2 pb-2">
+        <h2 className="text-ui-lg font-medium text-foreground">{title}</h2>
       </div>
       <div aria-hidden="true" className="h-px bg-surface" />
       <div className="mt-2">{children}</div>

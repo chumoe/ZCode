@@ -3,7 +3,7 @@ import {
   createSessionId,
   createTurnId,
   DeferredToolCallInputSchema,
-  TodoWriteInputSchema,
+  TaskStopInputSchema,
   type ToolSearchExecutionContext,
 } from "@zcode/contracts";
 import type { RuntimeMessageEntry } from "../src/agent/message-history.js";
@@ -27,6 +27,7 @@ function fixture(
   const handler = vi.fn(async (input: unknown) => input);
   const target: ToolEntry = {
     ...toolSearchToolEntry,
+    aliases: undefined,
     metadata: {
       ...toolSearchToolEntry.metadata,
       name: "DeferredA",
@@ -81,11 +82,28 @@ function resultEntry(content: RuntimeMessageEntry["message"]["content"]): Runtim
 const reference = (toolName: string) => ({ type: "tool_reference" as const, toolName });
 const text = (value: unknown) => JSON.stringify(value);
 
+it("executes the LocalToolSearch name through the same canonical handler", async () => {
+  const { expose, executor, registry } = fixture();
+  expect(registry.list()).not.toContain("LocalToolSearch");
+  const result = await executor.execute(
+    { id: "local-search", name: "LocalToolSearch", input: { query: "select:DeferredA" } },
+    { toolSearch: expose().context },
+  );
+  expect(result.success).toBe(true);
+  expect(result.modelContent).toEqual([{ type: "tool_reference", toolName: "DeferredA" }]);
+});
+
 describe("Local ToolSearch request projection", () => {
   it("exposes one concise calling example that satisfies both wrapper and target schemas", () => {
     const { expose } = fixture();
-    const description = expose().tools.find((tool) => tool.name === "ToolSearch")!.description!;
+    const description = expose().tools.find(
+      (tool) => tool.name === "LocalToolSearch",
+    )!.description!;
     expect(description).toMatch(/^Fetches .* called using DeferredToolCall\./);
+    expect(description).toContain(
+      '"select:TaskStop,mcp__byob__browser_navigate" — fetch these exact deferred tools by name',
+    );
+    expect(description).not.toContain("select:Read,Edit,Grep");
     expect(description).toContain("Call resident tools directly using their normal tool calls");
     expect(description).toContain(
       "For deferred tools, parameters describes the input object passed to DeferredToolCall.",
@@ -97,8 +115,10 @@ describe("Local ToolSearch request projection", () => {
     expect(examples).toHaveLength(1);
     const json = examples[0]![1]!.match(/DeferredToolCall\(([^\n]+)\)/)?.[1];
     const call = DeferredToolCallInputSchema.parse(JSON.parse(json!));
-    expect(call.name).toBe("TodoWrite");
-    expect(TodoWriteInputSchema.parse(call.input)).toEqual(call.input);
+    expect(call.name).toBe("TaskStop");
+    expect(TaskStopInputSchema.parse(call.input)).toEqual(call.input);
+    // 参数值只能是占位符，不能是模型可能照抄的虚构 task_id。
+    expect(call.input).toEqual({ task_id: expect.stringMatching(/^<.+>$/) });
   });
 
   it("expands a reference run in one functions block without changing tools or raw history", () => {
@@ -108,7 +128,7 @@ describe("Local ToolSearch request projection", () => {
     const initial = expose();
     const searched = expose(entries);
     expect(initial.tools.map((tool) => tool.name)).toEqual([
-      "ToolSearch",
+      "LocalToolSearch",
       "DeferredToolCall",
       "Resident",
     ]);
@@ -156,7 +176,7 @@ describe("Local ToolSearch request projection", () => {
       content[0].text.split("\n")[1]!.slice("<function>".length, -"</function>".length),
     );
     expect(definition.description).toBe(
-      result.tools.find((tool) => tool.name === "ToolSearch")?.description,
+      result.tools.find((tool) => tool.name === "LocalToolSearch")?.description,
     );
   });
 
@@ -306,7 +326,10 @@ describe("DeferredToolCall execution", () => {
     const direct = await execute(false);
     const wrapped = await execute(true);
     expect(wrapped.modelContent).toEqual(direct.modelContent);
-    expect(JSON.stringify(wrapped.modelContent)).toContain("TARGET_HOOK");
+    expect(wrapped.hookAdditionalContexts).toEqual(direct.hookAdditionalContexts);
+    expect(wrapped.hookAdditionalContexts).toEqual([
+      expect.stringMatching(/^\w+:DeferredA hook additional context: TARGET_HOOK$/),
+    ]);
     expect(callback).toHaveBeenCalledTimes(2);
     expect(handler).toHaveBeenCalledTimes(2);
     const cancelled = await execute(true, AbortSignal.abort());

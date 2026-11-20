@@ -8,7 +8,9 @@ import type {
   RemoteWorkspaceSessionEntry,
 } from "@zcode/shared";
 import {
+  isCredentialDecryptError,
   REMOTE_WORKSPACE_DIRECTORY_UNAVAILABLE_ERROR_CODE,
+  REMOTE_WORKSPACE_DIRECTORY_UNRESPONSIVE_ERROR_CODE,
   stripRemoteTargetSecrets,
 } from "@zcode/shared";
 import type { IServiceAccessor } from "@zcode/services";
@@ -35,10 +37,6 @@ type ManualReconnectRemoteWorkspaceParams = {
     target: Parameters<IPlatformService["connectRemote"]>[0],
     requestId?: string,
     context?: Parameters<IPlatformService["connectRemote"]>[2],
-  ) => Promise<string>;
-  resolveRemoteWorkspaceCanonicalPath: (
-    sessionId: string,
-    workspacePath: string,
   ) => Promise<string>;
   bindRemoteWorkspaceScope: (
     sessionId: string,
@@ -71,6 +69,10 @@ type ManualReconnectRemoteWorkspaceParams = {
   shouldKeepReconnectedWorkspace?: (
     context: Pick<RemoteWorkspaceSessionEntry, "workspacePath" | "workspaceIdentity">,
   ) => boolean;
+  /** 目录当前 tab 上仍在线的 owner session；没有或已失效时返回 undefined。 */
+  readLiveWorkspaceOwner?: (
+    context: Pick<RemoteWorkspaceSessionEntry, "workspacePath" | "workspaceIdentity">,
+  ) => string | undefined;
   onWorkspaceActivated?: (target: {
     workspacePath: string;
     workspaceIdentity: string;
@@ -99,6 +101,24 @@ export interface ReconnectRemoteWorkspaceOptions {
   onSshHostReady?: (credentials: SshReconnectCredentials) => void;
 }
 
+/**
+ * 读取 Profile secret；本机无法解密等同缺失，与 Host `SourceServerDirectory` 的规则一致。
+ * Bug 原因：~/.zcode 换机/换用户后，保存的密码解不开。Renderer 直接读取凭据，解密错误一路上抛，
+ * 点项目或设置页连接只显示通用的“连接失败”，到不了已有的补充凭据分支。其他读取错误照常上抛。
+ */
+async function loadUsableProfileCredential(
+  loadCredential: IServiceAccessor["credentialService"]["load"],
+  key: string,
+): Promise<string | null> {
+  try {
+    return await loadCredential(key);
+  } catch (error) {
+    if (!isCredentialDecryptError(error)) throw error;
+    logger.warn("[RemoteWorkspace] Profile 凭据在本机无法解密，按缺失处理");
+    return null;
+  }
+}
+
 export async function loadConnectionProfileCredentials(params: {
   profile: ConnectionProfile;
   loadCredential: IServiceAccessor["credentialService"]["load"];
@@ -110,10 +130,13 @@ export async function loadConnectionProfileCredentials(params: {
   }
   return {
     password: target.passwordCredentialKey
-      ? await params.loadCredential(target.passwordCredentialKey)
+      ? await loadUsableProfileCredential(params.loadCredential, target.passwordCredentialKey)
       : null,
     privateKeyPassphrase: target.privateKeyPassphraseCredentialKey
-      ? await params.loadCredential(target.privateKeyPassphraseCredentialKey)
+      ? await loadUsableProfileCredential(
+          params.loadCredential,
+          target.privateKeyPassphraseCredentialKey,
+        )
       : null,
   };
 }
@@ -158,7 +181,6 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
   loadCredential,
   getSettings,
   connectRemoteWorkspaceTarget,
-  resolveRemoteWorkspaceCanonicalPath,
   bindRemoteWorkspaceScope,
   disposeRemoteWorkspaceSession,
   bindRemoteWorkspacePath,
@@ -169,6 +191,7 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
   logger,
   toast,
   shouldKeepReconnectedWorkspace,
+  readLiveWorkspaceOwner,
   onWorkspaceActivated,
   formatError,
   options,
@@ -199,11 +222,14 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
     const sshCredentials = options?.sshCredentialsOverride ?? {
       password:
         targetSnapshot.kind === "ssh" && targetSnapshot.passwordCredentialKey
-          ? await loadCredential(targetSnapshot.passwordCredentialKey)
+          ? await loadUsableProfileCredential(loadCredential, targetSnapshot.passwordCredentialKey)
           : null,
       privateKeyPassphrase:
         targetSnapshot.kind === "ssh" && targetSnapshot.privateKeyPassphraseCredentialKey
-          ? await loadCredential(targetSnapshot.privateKeyPassphraseCredentialKey)
+          ? await loadUsableProfileCredential(
+              loadCredential,
+              targetSnapshot.privateKeyPassphraseCredentialKey,
+            )
           : null,
     };
     const token =
@@ -228,19 +254,22 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
     let sessionId: string;
     try {
       sessionId = await connectRemoteWorkspaceTarget(reconnectTarget, options?.requestId, {
-      workspacePath: sessionEntry.workspacePath,
-      workspaceIdentity: fallbackWorkspaceIdentity,
-      connectTrigger: "reconnect",
-    });
+        workspacePath: sessionEntry.workspacePath,
+        workspaceIdentity: fallbackWorkspaceIdentity,
+        connectTrigger: "reconnect",
+      });
     } catch (error) {
-      // 该结构化错误只由 Host 在 Source 已上线后的目录 admission 发出。发起项目被删
+      // 这两个结构化错误只由 Host 在 Source 已上线后的目录 admission 发出。发起项目被删
       // 不代表 SSH 凭据失败；先放行复用同一凭据的 siblings，再按原路径记录该项目失败。
+      // Bug 原因：读目录 30 秒无响应（unresponsive）过去没有放行，SSH 组重连因此判定 Host
+      // 未就绪，同设备其他项目一个都不重连。
       if (
         reconnectTarget.kind === "ssh" &&
         error &&
         typeof error === "object" &&
         "code" in error &&
-        error.code === REMOTE_WORKSPACE_DIRECTORY_UNAVAILABLE_ERROR_CODE
+        (error.code === REMOTE_WORKSPACE_DIRECTORY_UNAVAILABLE_ERROR_CODE ||
+          error.code === REMOTE_WORKSPACE_DIRECTORY_UNRESPONSIVE_ERROR_CODE)
       ) {
         options?.onSshHostReady?.(sshCredentials);
       }
@@ -251,10 +280,11 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
       // sibling 从此刻即可复用 initiator credential 创建 attachment，无需等待或重复读取凭据。
       options?.onSshHostReady?.(sshCredentials);
     }
-    resolvedWorkspacePath = await resolveRemoteWorkspaceCanonicalPath(
-      sessionId,
-      sessionEntry.workspacePath,
-    );
+    // Bug 原因（3.17.1 用户反馈“设备已连接、会话打不开”）：这里过去先对持久化路径做 realpath。
+    // 项目根目录是 symlink 时（例如 /home/dev/projects/app → /data/projects/app），bind 到目标路径会得到
+    // 另一个 identity，下方保留校验找不到对应 tab，把刚连上的 session 当作“已被移除”静默回收，
+    // 设备上线后的自动挂回与手动重连都会如此。已绑定的 workspace 以首次 bind 的路径为身份，
+    // 重连沿用持久化路径，与项目入口一致；已绑定的路径不再做 realpath。
     // Bug 原因：Renderer 过去用 transport target 本地推导 identity，与 Host 绑定的 remote:server:*
     // 权威 identity 分裂。这里和首次连接保持一致：先完成 Host bind，再只消费返回的权威 scope。
     // 这次 bind 也是手机远控桥接能通过的前提：bridge 按 tab 的 path/identity 三元比对 main descriptor，
@@ -280,6 +310,22 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
     ) {
       logger.warn("[Root] 远程 workspace 在重连过程中已被移除，跳过恢复并回收 session", {
         workspacePath: resolvedWorkspacePath,
+      });
+      await disposeRemoteWorkspaceSession(sessionId);
+      return;
+    }
+    // Bug 原因：入口只在发起前检查 tab 是否已有 owner；连接与 Provisioning 等待期间，侧栏导航可能已为
+    // 同一目录写入另一条 session，这里直接覆盖 tab，被替换的 session 无人回收。写入前按同一规则复核：
+    // 已有在线 owner 时让出并回收本次连接，与项目打开路径的复用规则一致。
+    const liveOwner = readLiveWorkspaceOwner?.({
+      workspacePath: resolvedWorkspacePath,
+      workspaceIdentity: resolvedWorkspaceIdentity,
+    });
+    if (liveOwner && liveOwner !== sessionId) {
+      logger.warn("[Root] 远程 workspace 在重连过程中已有在线 owner，让出并回收 session", {
+        workspacePath: resolvedWorkspacePath,
+        sessionId,
+        liveOwner,
       });
       await disposeRemoteWorkspaceSession(sessionId);
       return;
@@ -330,6 +376,17 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
       workspacePath: resolvedWorkspacePath,
       error: message,
     });
+    const reasonCode =
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      typeof error.code === "string" &&
+      error.code.trim()
+        ? error.code
+        : "remote-connection-unknown";
+    // Bug 原因：失败记录过去只存本地化文案。等待点（需要安装等）也写成失败，原项目交接分不清两类，
+    // 线路未识别的旧 tab 只能一律重连，普通失败后每次点击都静默重拨、打不开向导。错误码随文案一起落盘。
+    // CR-01：新异常也可能没有有效码；写入通用失败码，避免再次被当成无码旧记录而反复拨号。
     await commitRemoteWorkspaceSessionMutation(
       buildRemoteWorkspaceSessionMutation({
         remoteSessions: getRemoteSessions(),
@@ -338,12 +395,11 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
         target: reconnectTarget,
         lastConnectionStatus: "failed",
         lastConnectionError: message,
+        lastConnectionErrorCode: reasonCode,
         touchOpenedAt: false,
       }),
     );
     // 失败事实只在此写回；手动入口收到结构化异常后决定是否交接唯一向导。
-    const reasonCode =
-      error && typeof error === "object" && "code" in error ? String(error.code) : undefined;
     if (showErrorToast && shouldShowStandaloneRemoteErrorToast(reasonCode)) {
       toast(message);
     }

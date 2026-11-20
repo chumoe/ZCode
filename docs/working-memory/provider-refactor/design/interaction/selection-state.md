@@ -95,6 +95,16 @@ run、Active Model 和历史记录不重新对应账号。定时任务长期配�
 接口读取失败与正常不完整结果分开：公共 hook 继续订阅，首次临时读取失败允许有限、可取消重试，
 不重试不完整选择或派发；耗尽后显式 reload。没有目标、远端未连接不回退本地。没有发送前配置同步屏障。
 
+## 手动压缩的模型选择（2026-10-20）
+
+手动 `/compact` 与上下文面板的压缩动作使用提交时 Composer 的 ModelSelection。
+命令携带 provider/model 及稀疏 options；不携带 mode、Plan 或执行凭据。
+CLI 接收时固定为 canonical intent，立即执行、FIFO 排队、恢复及提升均沿用该快照。
+旧客户端缺少选择时，CLI 在接收边界固定当前 Session Selection。
+已开始的请求不受后续菜单编辑影响；Session 续跑选择沿用现有 admissionSeq 防倒写规则。
+摘要请求的 reasoning/output 策略继续由 compact 实现决定；自动 compact 使用触发轮的 Active Model。
+验收与实施边界见 [compact 裁决](../../../../testing/conversation-session-compact-decision-worksheet.md)。
+
 ## App Recent
 
 App Recent 保存 App 在某个 Workspace 中最近一次成功提交的 ModelSelection：
@@ -119,6 +129,11 @@ App Recent
 Selection，不能为创建成功而自动选择其他模型或档位。
 
 Session Selection 保存 Session 后续执行延续使用的 ModelSelection。普通用户消息在 CLI 串行 admission 接受时更新；已排队消息执行时使用自己的 Submission 快照，不覆盖较新输入确定的续跑选择。闲时任务在自己的生命周期中维护临时续跑选择，用户输入接管后采用用户提交的选择。验证记录见闲时后台生命周期计划。
+
+已有 App 会话的显式选模（含切 Provider 自动选模）立即通过 `switchModelConfig` 保存完整
+Selection，成功后飞书等同会话入口的新输入使用它。新建未绑定草稿仍延后到首发。配置更新不
+替换正在执行的 Active Model，不改写已接纳队列的 Submission；旧队列消费不得覆盖较新配置。
+详见[Composer 交互合同](../../../../composer-model-thinking.md#已有会话选模立即生效)。
 
 ### CLI 默认与加速卡回退
 
@@ -162,7 +177,7 @@ Provider Config 更新不会重写 Session Selection。下一次执行以这份 
 ```
 
 当前字段存在（含清空或损坏）时，不用旧字段修复。普通未知型号/Provider 保留明确身份，暂时不可用不阻止迁移。
-Session 恢复返回原选择，不先按 Registry 丢弃；真正 Runtime 绑定仍只允许合法完整选择。Composer 改选/清空仅改草稿，正式选择/Recent 按发送接纳边界更新，失败和刷新不写空。
+Session 恢复返回原选择，不先按 Registry 丢弃；真正 Runtime 绑定仍只允许合法完整选择。未绑定会话的 Composer 改选/清空仅改草稿；已有会话选模由配置命令确认 Session Selection，Recent 仍按发送接纳边界更新，失败和刷新不写空。
 闲时任务的身份/Ticket 迁移仍排除。用户目录 Subagent Markdown 的原地迁移由 Todo97 定义；其他来源不自动写入。
 
 ## Configured Default
@@ -333,13 +348,13 @@ Configured Default 与 Fallback Policy 的解析结果；Renderer 不重复这�
 
 ## 写入事件
 
-| 状态              | 写入事件                                   | 持久化范围                |
-| ----------------- | ------------------------------------------ | ------------------------- |
-| Draft Selection   | Composer 编辑                              | Entry Draft               |
-| App Recent        | App 接受用户 Submission                    | App × workspaceKey        |
-| Session Selection | 普通 Submission 被接纳；闲时执行临时设值 | Session（仅持久化普通选择） |
-| CLI Default Selection | CLI/TUI 的 /model、/effort；会话初始化 | 复用已有普通用户选择存储 |
-| Active Model      | Loop 启动，或 Guide 在 Step 边界切换       | 当前 Agent Loop，不持久化 |
+| 状态                  | 写入事件                                 | 持久化范围                  |
+| --------------------- | ---------------------------------------- | --------------------------- |
+| Draft Selection       | Composer 编辑                            | Entry Draft                 |
+| App Recent            | App 接受用户 Submission                  | App × workspaceKey          |
+| Session Selection     | 普通 Submission 被接纳；闲时执行临时设值 | Session（仅持久化普通选择） |
+| CLI Default Selection | CLI/TUI 的 /model、/effort；会话初始化   | 复用已有普通用户选择存储    |
+| Active Model          | Loop 启动，或 Guide 在 Step 边界切换     | 当前 Agent Loop，不持久化   |
 
 这些状态共享 ModelSelection 语义，但不共享写入时机。一个状态变化后，可以按明确事件更新另一个状态；任何状态都不通过观察其他状态的当前值来猜测自己应该保存什么。
 

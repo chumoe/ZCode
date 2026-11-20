@@ -68,7 +68,7 @@
 
 凭据 owner、存储键和 nonce 校验保持不变；桌面 continuous / 手机 replayable 的连接、恢复和业务 owner 不变。已有 Web 登录态继续可用，切换账号和 401 返回同一双平台门禁。
 
-验收复用 `packages/web/test/e2e/manual-review/pending/remote-login-v2.mjs`：
+验收复用 `packages/web/test/e2e/remote-control/authentication/manual-review/pending/remote-login-v2.mjs`：
 
 - 390px / 1024px × Zai Light / Zai Dark × 中英文展示两入口，顺序、平台名称和标签与桌面一致。
 - 两平台分别验证点击、授权参数、pending provider、token 请求 provider、独立凭据键、原扫码地址回跳及 terminal 配对；BigModel 使用 authCode 回调。
@@ -89,7 +89,7 @@
 
 ## 回调落到同一浏览器的其他标签页
 
-部分手机浏览器在 OAuth 往返后，回调页不在发起登录的标签页里，或标签页被系统回收后重建（例如切到短信 App 查看短信验证码）。登录记录原先只存在发起页的 sessionStorage，回调页读不到，就在换 token 前报 “OAuth CSRF 检测失败”；点“重新登录”在同一环境中仍会失败，换浏览器才能完成。
+部分手机浏览器在 OAuth 往返后，回调页不在发起登录的标签页里，或标签页被系统回收后重建（例如切到短信 App 查看登录消息）。登录记录原先只存在发起页的 sessionStorage，回调页读不到，就在换 token 前报 “OAuth CSRF 检测失败”；点“重新登录”在同一环境中仍会失败，换浏览器才能完成。
 
 ```text
 修复前：Tab A 写 sessionStorage[A].nonce=N → provider 登录 → 回调落在 Tab B / 重建后的 Tab A

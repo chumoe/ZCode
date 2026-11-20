@@ -23,14 +23,11 @@ import {
 } from "@zcode/shared";
 import {
   WEB_REMOTE_CONTROL_V2_HEARTBEAT_ACK_TIMEOUT_MS,
-  WEB_REMOTE_CONTROL_V2_HEARTBEAT_INTERVAL_MS,
   WebRemoteControlV2ConnectionError,
   WebRemoteControlV2Heartbeat,
   WebRemoteControlV2RetryPolicy,
+  WEB_REMOTE_CONTROL_V2_RECONNECT_SPREAD_MS,
   webRemoteControlV2PairState,
-  WEB_REMOTE_CONTROL_RECONNECT_JITTER_MS,
-  getWebRemoteControlHeartbeatJitterMs,
-  getWebRemoteControlReconnectJitterMs,
   type WebRemoteControlRelayV2OutgoingMessage,
 } from "@zcode/shared/web-remote-relay";
 
@@ -41,15 +38,18 @@ export class WebRemoteControlTerminalTransport {
   private intentionallyClosed = false;
   private wasPaired = false;
   private hadPairedSession = false;
-  private staleWaitingCount = 0;
+  // 打散窗口与电脑共用，受桌面 3 秒手机断连宽限约束；规则见 WebRemoteControlV2RetryPolicy.nextDelay。
   private readonly retry = new WebRemoteControlV2RetryPolicy(Math.random, {
     initialMs: 500,
     maxMs: 10_000,
-    jitter: 0,
+    jitter: 0.2,
+    spreadMs: WEB_REMOTE_CONTROL_V2_RECONNECT_SPREAD_MS,
   });
   private tokenController?: AbortController;
   private handshakeTimer?: ReturnType<typeof setTimeout>;
   private authenticated = false;
+  // 最近一次 matched 所在且尚未被 waiting/INTERNAL/关闭撤销的 socket；挂起不撤销这项连接事实。
+  private pairedSocket?: WebSocket;
   private readonly heartbeat: WebRemoteControlV2Heartbeat;
   private socketGeneration = 0;
   private lastPairedSocketGeneration = 0;
@@ -62,7 +62,6 @@ export class WebRemoteControlTerminalTransport {
     timer: ReturnType<typeof setTimeout>;
   }>();
   private waitingTimer?: ReturnType<typeof setTimeout>;
-  private staleWaitingRecoveryTimer?: ReturnType<typeof setTimeout>;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private desktopOfflineFailureTimer?: ReturnType<typeof setTimeout>;
   private readonly traceRelayMessages = import.meta.env.DEV;
@@ -72,7 +71,7 @@ export class WebRemoteControlTerminalTransport {
     this.WebSocketCtor = options.WebSocketCtor ?? globalThis.WebSocket;
     this.heartbeat = new WebRemoteControlV2Heartbeat(
       () => this.sendPairStatusQuery(),
-      () => this.reconnectAfterStaleWaiting(this.getReconnectJitterMs()),
+      () => this.reconnectAfterHeartbeatTimeout(this.retry.nextDelay()),
       {
         intervalMs: options.heartbeatIntervalMs,
         jitterMs: options.heartbeatJitterMs,
@@ -85,8 +84,7 @@ export class WebRemoteControlTerminalTransport {
     this.intentionallyClosed = false;
     this.wasPaired = false;
     this.hadPairedSession = false;
-    this.staleWaitingCount = 0;
-    this.retry.acknowledged();
+    this.retry.reset();
     this.lastPairedSocketGeneration = 0;
     this.lastPairStatusAckAt = Date.now();
     this.setState("connecting");
@@ -172,7 +170,6 @@ export class WebRemoteControlTerminalTransport {
         });
         this.stopHeartbeat();
         this.clearWaitingTimer();
-        this.clearStaleWaitingRecoveryTimer();
         if (this.intentionallyClosed) {
           return;
         }
@@ -213,7 +210,9 @@ export class WebRemoteControlTerminalTransport {
         maxBytes: WEB_REMOTE_CONTROL_RPC_TRANSPORT_LIMITS.maxPhysicalFrameBytes,
       };
     }
-    if (this.state !== "paired" || this.staleWaitingCount > 0) {
+    // 挂起期间只确认已收到的可靠帧，避免对端 45 秒期限误判；新的业务发送仍等 paired。
+    const retainedAck = payload.zcode_type === "rpc-frame-ack" && this.canContinueRetainedRpc();
+    if (this.state !== "paired" && !retainedAck) {
       return { kind: "unavailable" };
     }
     return this.sendSerialized(prepared.message, prepared.json)
@@ -239,7 +238,6 @@ export class WebRemoteControlTerminalTransport {
     this.clearReconnectTimer();
     this.stopHeartbeat();
     this.clearWaitingTimer();
-    this.clearStaleWaitingRecoveryTimer();
     this.setState("suspended");
   }
 
@@ -247,10 +245,8 @@ export class WebRemoteControlTerminalTransport {
     if (this.intentionallyClosed) throw new Error("Web remote control transport stopped.");
     this.emitDiagnostic({ type: "recover-start", state: this.state });
     this.clearReconnectTimer();
-    this.clearStaleWaitingRecoveryTimer();
     this.stopHeartbeat();
     this.clearWaitingTimer();
-    this.staleWaitingCount = 0;
     if (
       this.state === "suspended" &&
       this.wasPaired &&
@@ -268,7 +264,7 @@ export class WebRemoteControlTerminalTransport {
         }
       }
     }
-    this.retry.acknowledged();
+    this.retry.reset();
     this.reconnectNow();
     await this.waitForPaired(timeoutMs);
   }
@@ -281,10 +277,8 @@ export class WebRemoteControlTerminalTransport {
     // 这里继续原地重连，不把当前页面切成错误页，保证用户正在输入的草稿不被卸载。
     this.clearReconnectTimer();
     this.clearWaitingTimer();
-    this.clearStaleWaitingRecoveryTimer();
     this.clearDesktopOfflineFailureTimer();
     this.stopHeartbeat();
-    this.staleWaitingCount = 0;
     this.reconnectNow();
   }
 
@@ -292,7 +286,6 @@ export class WebRemoteControlTerminalTransport {
     this.intentionallyClosed = true;
     this.stopHeartbeat();
     this.clearWaitingTimer();
-    this.clearStaleWaitingRecoveryTimer();
     this.clearDesktopOfflineFailureTimer();
     this.clearReconnectTimer();
     this.rejectPairedWaiters(new Error("Web remote control transport disposed."));
@@ -323,12 +316,23 @@ export class WebRemoteControlTerminalTransport {
         this.applyPairStatus(message.pair_status);
         break;
       case "pair_status_ack":
-        if (!this.authenticated || this.state === "suspended") return;
+        if (!this.authenticated) return;
+        if (this.state === "suspended") {
+          // 后台 waiting 只撤销 raw 帧许可；迟到 matched 不复活页面或心跳，回前台由探测重新确认。
+          if (message.pair_status === "waiting") this.pairedSocket = undefined;
+          return;
+        }
         this.applyPairStatus(message.pair_status);
         break;
       case "data":
-        if (!this.authenticated || this.state !== "paired") return;
-        this.handleDataPayload(message.payload);
+        if (!this.authenticated) return;
+        if (this.state === "paired") {
+          this.handleDataPayload(message.payload);
+        } else if (this.canContinueRetainedRpc() && isRawTransportCandidate(message.payload)) {
+          // Bugfix: 3.16 在挂起/原 socket 探测期间丢弃同一有效 socket 的 rpc-frame，回前台下一帧序号断档，
+          // 触发 physicalGap 和 bridge 重建。raw 帧交现有 adapter 校验身份与顺序，未接纳的不回落 app payload。
+          this.options.onRawTransportPayload?.(message.payload);
+        }
         break;
       case "error":
         this.handleRelayError(message.code, message.message);
@@ -336,7 +340,18 @@ export class WebRemoteControlTerminalTransport {
     }
   }
 
+  /** 挂起或原 socket 探测期间，当前 socket 是否仍是已认证、打开的同一连接；默认还要求 raw 帧许可未撤销。 */
+  private canContinueRetainedRpc(requirePermit = true): boolean {
+    return (
+      (this.state === "suspended" || this.state === "reconnecting") &&
+      this.authenticated &&
+      (!requirePermit || this.socket === this.pairedSocket) &&
+      this.socket?.readyState === this.WebSocketCtor.OPEN
+    );
+  }
+
   private applyPairStatus(status: "waiting" | "matched"): void {
+    this.pairedSocket = status === "matched" ? this.socket : undefined;
     this.lastPairStatusAckAt = Date.now();
     this.emitDiagnostic({ type: "pair-status", pairStatus: status, state: this.state });
     if (webRemoteControlV2PairState(status) === "waiting_terminal") {
@@ -344,8 +359,6 @@ export class WebRemoteControlTerminalTransport {
         // Bugfix: zcode-remote-hub 的 waiting 是合法配对状态，表示当前 device 不在 hub 里，
         // 不是 terminal WS 损坏信号。已配对后降级为 waiting 时保持同一条手机端 WS，
         // 继续轻量查询，避免把桌面端短暂重连放大成手机端反复踢旧连接。
-        this.staleWaitingCount = 0;
-        this.clearStaleWaitingRecoveryTimer();
         this.clearReconnectTimer();
         this.clearWaitingTimer();
         this.clearDesktopOfflineFailureTimer();
@@ -366,9 +379,7 @@ export class WebRemoteControlTerminalTransport {
           : previousPairedGeneration === this.socketGeneration
             ? "same-socket"
             : "reconnected-socket";
-      this.staleWaitingCount = 0;
       this.retry.acknowledged();
-      this.clearStaleWaitingRecoveryTimer();
       this.clearDesktopOfflineFailureTimer();
       this.clearReconnectTimer();
       this.clearWaitingTimer();
@@ -406,6 +417,14 @@ export class WebRemoteControlTerminalTransport {
       return;
     }
     if (code === "INTERNAL") {
+      if (this.wasPaired && this.canContinueRetainedRpc(false)) {
+        // Bugfix: 挂起期间回 ACK 时 hub 找不到桌面只回 INTERNAL。若按未配对重连处理，会关闭 socket
+        // 并清掉 wasPaired，回前台跳过原 socket 探测，桌面未回来时 30 秒进入失败页。这里只撤销许可。
+        // 多个 ACK 在途时会连收 INTERNAL，首个已撤销许可，所以这里不要求许可，否则后续落回未配对分支。
+        this.pairedSocket = undefined;
+        this.options.onError(new Error(message || code));
+        return;
+      }
       if (this.state === "paired" || (this.hadPairedSession && this.state === "waiting")) {
         this.enterWaitingForDeviceAfterRelayError(message || code);
         return;
@@ -431,19 +450,6 @@ export class WebRemoteControlTerminalTransport {
 
   private startHeartbeat(): void {
     this.heartbeat.acknowledged();
-  }
-
-  private getReconnectJitterMs(): number {
-    const baseIntervalMs =
-      this.options.heartbeatIntervalMs ?? WEB_REMOTE_CONTROL_V2_HEARTBEAT_INTERVAL_MS;
-    const heartbeatJitterMs = getWebRemoteControlHeartbeatJitterMs(
-      baseIntervalMs,
-      this.options.heartbeatJitterMs,
-    );
-    return getWebRemoteControlReconnectJitterMs(
-      this.options.reconnectJitterMs ??
-        Math.min(heartbeatJitterMs, WEB_REMOTE_CONTROL_RECONNECT_JITTER_MS),
-    );
   }
 
   private sendPairStatusQuery(): boolean {
@@ -480,38 +486,10 @@ export class WebRemoteControlTerminalTransport {
     this.waitingTimer = undefined;
   }
 
-  private scheduleStaleWaitingRecovery(): void {
-    if (this.staleWaitingRecoveryTimer) {
-      return;
-    }
-    this.staleWaitingRecoveryTimer = setTimeout(() => {
-      this.staleWaitingRecoveryTimer = undefined;
-      if (
-        (this.state === "paired" ||
-          this.state === "reconnecting" ||
-          this.state === "connecting" ||
-          this.state === "authenticating") &&
-        this.staleWaitingCount > 0
-      ) {
-        this.reconnectAfterStaleWaiting();
-      }
-    }, this.options.staleWaitingRecoveryMs ?? 1_500);
-  }
-
-  private clearStaleWaitingRecoveryTimer(): void {
-    if (!this.staleWaitingRecoveryTimer) {
-      return;
-    }
-    clearTimeout(this.staleWaitingRecoveryTimer);
-    this.staleWaitingRecoveryTimer = undefined;
-  }
-
-  private reconnectAfterStaleWaiting(reconnectDelayMs = 0): void {
-    this.clearStaleWaitingRecoveryTimer();
+  private reconnectAfterHeartbeatTimeout(reconnectDelayMs: number): void {
     this.stopHeartbeat();
     this.clearWaitingTimer();
     this.clearReconnectTimer();
-    this.staleWaitingCount = 0;
     // Bugfix: 已配对手机在恢复时可能先拿到 auth_ack: waiting。
     // 这里不能清掉 wasPaired，否则下一跳 waiting 会被当成首次未匹配并进入失败页；
     // 保留已配对语义，让状态机继续按可恢复短断连重试到 matched。
@@ -538,12 +516,11 @@ export class WebRemoteControlTerminalTransport {
     this.connect();
   }
 
-  private scheduleReconnect(options?: { immediate?: boolean; delayMs?: number }): void {
-    if (this.intentionallyClosed || this.state === "suspended") return;
-    if (this.reconnectTimer) {
-      return;
-    }
-    const delayMs = options?.delayMs ?? (options?.immediate ? 0 : this.retry.nextDelay());
+  private scheduleReconnect(options?: { delayMs?: number }): void {
+    if (this.intentionallyClosed || this.state === "suspended" || this.reconnectTimer) return;
+    // Bugfix: 原来 INTERNAL/DEVICE_OFFLINE 为 0ms 重连、心跳超时为 0~1秒，relay 批量下发错误时多台手机
+    // 同时申请 token。现统一走 retry.nextDelay()，连接建立后的第1次重连在打散窗口内随机。
+    const delayMs = options?.delayMs ?? this.retry.nextDelay();
     this.closeSocket();
     this.setState("reconnecting");
     this.emitDiagnostic({ type: "recover-scheduled", state: this.state });
@@ -552,7 +529,6 @@ export class WebRemoteControlTerminalTransport {
       if (this.intentionallyClosed || this.state === "suspended") {
         return;
       }
-      this.staleWaitingCount = 0;
       this.wasPaired = false;
       this.closeSocket();
       this.connect();
@@ -563,19 +539,15 @@ export class WebRemoteControlTerminalTransport {
     this.options.onError(new Error(message));
     this.stopHeartbeat();
     this.clearWaitingTimer();
-    this.clearStaleWaitingRecoveryTimer();
-    this.staleWaitingCount = 0;
     this.wasPaired = false;
     this.closeSocket();
-    this.scheduleReconnect({ immediate: true });
+    this.scheduleReconnect();
   }
 
   private recoverFromDeviceOffline(message: string): void {
     this.options.onError(new Error(message));
     this.stopHeartbeat();
     this.clearWaitingTimer();
-    this.clearStaleWaitingRecoveryTimer();
-    this.staleWaitingCount = 0;
     this.wasPaired = false;
     if (!this.desktopOfflineFailureTimer) {
       this.desktopOfflineFailureTimer = setTimeout(() => {
@@ -584,19 +556,18 @@ export class WebRemoteControlTerminalTransport {
       }, this.options.desktopOfflineGraceMs ?? 15_000);
     }
     this.closeSocket();
-    this.scheduleReconnect({ immediate: true });
+    this.scheduleReconnect();
   }
 
   private enterWaitingForDeviceAfterRelayError(message: string): void {
+    this.pairedSocket = undefined;
     // Bugfix: zcode-remote-hub 在已认证连接上转发 data 找不到 device 时只返回 INTERNAL，
     // 不会关闭当前 terminal WS。这里保持手机端 WS，降级为 waiting 并继续查询配对状态，
     // 避免把“桌面端暂时不在”放大成手机端反复重连。
     this.options.onError(new Error(message));
     this.clearWaitingTimer();
-    this.clearStaleWaitingRecoveryTimer();
     this.clearDesktopOfflineFailureTimer();
     this.clearReconnectTimer();
-    this.staleWaitingCount = 0;
     this.setState("waiting");
     this.startHeartbeat();
   }
@@ -655,7 +626,6 @@ export class WebRemoteControlTerminalTransport {
     this.intentionallyClosed = true;
     this.stopHeartbeat();
     this.clearWaitingTimer();
-    this.clearStaleWaitingRecoveryTimer();
     this.clearDesktopOfflineFailureTimer();
     this.clearReconnectTimer();
     this.setState(failure.reason === "session-conflict" ? "kicked" : "error");
@@ -665,6 +635,7 @@ export class WebRemoteControlTerminalTransport {
   }
 
   private closeSocket(): void {
+    this.pairedSocket = undefined;
     // 等待超时属于旧 socket；KICKED 的退避不能让其残留引用阻止新一代重新计时。
     this.clearWaitingTimer();
     ++this.socketGeneration;

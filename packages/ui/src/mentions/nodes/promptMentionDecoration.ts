@@ -26,6 +26,7 @@ import {
   VIDEO_ATTACHMENT_ICON_NODE,
   WEB_ELEMENT_ICON_NODE,
   WHITEBOARD_MENTION_ICON_NODE,
+  ELEMENT_MENTION_ICON_NODE,
   WORKFLOW_COMMAND_MENTION_ICON_NODE,
   type MentionLucideIconNode,
 } from "@/mentions/nodes/mentionIconDom.js";
@@ -79,6 +80,11 @@ export function decoratePromptMention(
     const icon = resolvePluginIconSource(value, data?.icon);
     if (icon) setImage(dom, icon, fallback);
     else fallback();
+    return;
+  }
+  // 插件 composer.mention 的候选项：统一用插件图标（候选项的图标只在 `@` 面板里渲染）。
+  if (category === "extensions") {
+    setMask(dom, PLUGIN_MENTION_ICON_NODE);
     return;
   }
   if (category === "files") {
@@ -139,12 +145,14 @@ export function decoratePromptMention(
           ? SESSION_MENTION_ICON_NODE
           : category === "whiteboards"
             ? WHITEBOARD_MENTION_ICON_NODE
-            : command === "goal"
-              ? GOAL_COMMAND_MENTION_ICON_NODE
-              : command === "workflow"
-                ? WORKFLOW_COMMAND_MENTION_ICON_NODE
-                : command === "compact"
-                  ? COMPACT_COMMAND_MENTION_ICON_NODE
-                  : COMMAND_MENTION_ICON_NODE;
+            : category === "elements"
+              ? ELEMENT_MENTION_ICON_NODE
+              : command === "goal"
+                ? GOAL_COMMAND_MENTION_ICON_NODE
+                : command === "workflow"
+                  ? WORKFLOW_COMMAND_MENTION_ICON_NODE
+                  : command === "compact"
+                    ? COMPACT_COMMAND_MENTION_ICON_NODE
+                    : COMMAND_MENTION_ICON_NODE;
   setMask(dom, icon);
 }

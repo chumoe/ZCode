@@ -33,10 +33,10 @@ export function getPromptMentionVariantClassName(
   if (category === "sessions") {
     return "text-session-node-foreground";
   }
-  if (category === "plugins") {
+  if (category === "plugins" || category === "extensions") {
     return "text-plugin-node-foreground";
   }
-  if (category === "whiteboards") {
+  if (category === "whiteboards" || category === "elements") {
     return "text-file-node-foreground";
   }
   if (category === "attachments") {

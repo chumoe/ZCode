@@ -16,6 +16,7 @@ import {
   cronCreateToolEntry,
   cronListToolEntry,
   cronDeleteToolEntry,
+  cronPauseSelfToolEntry,
 } from "../src/tool/handlers/cron.js";
 import { createTestRuntimeModel } from "./test-runtime-model.js";
 
@@ -43,6 +44,7 @@ describe("ToolSearch semantics", () => {
       cronCreateToolEntry,
       cronListToolEntry,
       cronDeleteToolEntry,
+      cronPauseSelfToolEntry,
     ].forEach((entry) => registry.register(entry));
     const tools = registry.toContracts();
     const exposed = buildToolExposure({
@@ -59,15 +61,16 @@ describe("ToolSearch semantics", () => {
     for (const tool of exposed.context.catalog.filter((t) => t.deferred))
       expect(tool.searchHint, tool.name).toBeTruthy();
     for (const [query, name] of [
-      ["checklist", "TodoWrite"],
+      ["logs", "TaskOutput"],
       ["cancel", "CronDelete"],
       ["active", "CronList"],
+      ["pause", "CronPauseSelf"],
     ]) {
       expect(searchTools(query!, exposed.context.catalog)).toContain(name);
       expect(searchTools(`+${query}`, exposed.context.catalog)).toContain(name);
     }
     expect(searchTools("+cancel cron", exposed.context.catalog)).toEqual(["CronDelete"]);
-    expect(searchTools("+checklist absent", exposed.context.catalog)).toEqual(["TodoWrite"]);
+    expect(searchTools("+logs absent", exposed.context.catalog)).toEqual(["TaskOutput"]);
     const scoped = exposed.context.catalog.filter((t) => t.name !== "CronDelete");
     expect(searchTools("+cancel cron", scoped)).not.toContain("CronDelete");
   });

@@ -3,17 +3,22 @@ import { logger } from "@/logger.js";
 
 export type SettingsSectionId =
   | "general"
+  | "agentBehavior"
   | "appearance"
   | "migration"
   | "browser"
   | "modelProvider"
   | "remoteDevices"
+  | "dataSync"
+  | "personalization"
   | "memory"
   | "plugin"
   | "mcp"
   | "skill"
   | "plugins"
+  | "projects"
   | "archives"
+  | "shares"
   | "usage"
   | "subagents"
   | "commands"
@@ -66,17 +71,22 @@ export interface SettingsModelProviderTarget {
 function isSettingsSectionId(value: string): value is SettingsSectionId {
   return (
     value === "general" ||
+    value === "agentBehavior" ||
     value === "appearance" ||
     value === "migration" ||
     value === "browser" ||
     value === "modelProvider" ||
     value === "remoteDevices" ||
+    value === "dataSync" ||
+    value === "personalization" ||
     value === "memory" ||
     value === "plugin" ||
     value === "mcp" ||
     value === "skill" ||
     value === "plugins" ||
+    value === "projects" ||
     value === "archives" ||
+    value === "shares" ||
     value === "usage" ||
     value === "subagents" ||
     value === "commands" ||

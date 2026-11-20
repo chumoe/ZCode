@@ -9,6 +9,25 @@ import {
   type ProviderRequestMessageProjectionResult,
 } from "./provider-request-messages.js";
 
+/** 本次请求是否走 MCS 的唯一判断：provider 投影与 system prompt 的 Harness 文案共用。 */
+export function shouldUseMidConversationSystem(
+  config: Pick<AgentRuntimeConfig, "midConversationSystem">,
+  model: Pick<Model, "properties">,
+): boolean {
+  return (
+    config.midConversationSystem?.mode === "force" || model.properties.supportsMidConversationSystem
+  );
+}
+
+/** 模型请求能力到投影参数的唯一推导：普通请求与 compact 的记录投影共用，避免两处各自读取漏掉新开关。 */
+export function requestCapabilityProjectionOptions(model: Pick<Model, "requestCapabilities">) {
+  const capabilities = model.requestCapabilities;
+  return {
+    foldRemindersIntoToolResults: capabilities?.foldRemindersIntoToolResults === true,
+    dropReasoningOnlyOrBlankAssistants: capabilities?.dropReasoningOnlyOrBlankAssistants === true,
+  };
+}
+
 type RequestRuntime = {
   readonly config: Pick<AgentRuntimeConfig, "midConversationSystem" | "toolSearch">;
 };
@@ -68,11 +87,9 @@ export function buildRuntimeProviderRequestMessages(
   runtime: RequestRuntime,
   input: MessageProjectionInput,
 ): ProviderRequestMessageProjectionResult {
-  const useMidConversationSystem =
-    runtime.config.midConversationSystem?.mode === "force" ||
-    input.model.properties.supportsMidConversationSystem;
   return buildProviderRequestMessages({
     ...input,
-    useMidConversationSystem,
+    useMidConversationSystem: shouldUseMidConversationSystem(runtime.config, input.model),
+    ...requestCapabilityProjectionOptions(input.model),
   });
 }

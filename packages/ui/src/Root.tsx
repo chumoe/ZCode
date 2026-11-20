@@ -1,4 +1,6 @@
+import { useInterfaceModeTelemetry } from "@/lib/appTelemetry.js";
 import { ProjectDirectoryProvider } from "@/project-sidebar/ProjectDirectoryProvider.js";
+import { DataSyncDialogProvider } from "@/data-sync/index.js";
 import { RemoteProjectPicker } from "@/project-sidebar/RemoteProjectPicker.js";
 import {
   buildRemoteWorkspaceIdentity,
@@ -36,7 +38,12 @@ import {
   useDynamicWorkflowUserModeSync,
 } from "@/hooks/useDynamicWorkflowAvailability.js";
 import { DirectoryBrowser } from "@/DirectoryBrowser.js";
-import { attachRemoteProjectWorkspace, resolveEntryProject } from "@/project-sidebar/index.js";
+import {
+  attachRemoteProjectWorkspace,
+  resolveEntryProject,
+  useRemoteWorkspaceConnectionGate,
+  useWebRemoteControlRendererActions,
+} from "@/project-sidebar/index.js";
 import { useTabPersistence, type WorkspacePersistenceGate } from "@/hooks/useTabPersistence.js";
 import { useTokenRefresh } from "@/hooks/useTokenRefresh.js";
 import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
@@ -46,7 +53,12 @@ import { SettingsPage } from "@/SettingsPage.js";
 import { setPendingSettingsSectionIntent } from "@/lib/settingsNavigation.js";
 import { CodingPlanUpgradeDialogProvider } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 import { RewardsProvider } from "@/rewards/RewardsProvider.js";
-import { WelcomeScreen, type LoginCompleteReason } from "@/WelcomeScreen.js";
+import {
+  CredentialStoreRecovery,
+  WelcomeScreen,
+  type LoginCompleteReason,
+} from "@/WelcomeScreen.js";
+import { useCredentialStoreRecovery } from "@/hooks/useCredentials.js";
 import { setDefaultFileDisplayBasePath } from "@/lib/fileDisplay.js";
 import { readRendererLaunchTimings, shouldReportLaunchToInput } from "@/lib/launchToInputReport.js";
 import { reportUiLaunchToInput } from "@/lib/uiPerfArmsTelemetry.js";
@@ -123,8 +135,8 @@ import type {
   DeviceAdditionReturnTarget,
   RemoteConnectionOpenPreference,
 } from "@/app-shell/types.js";
+import { DEFAULT_LUCIDE_STROKE_WIDTH } from "@/components/icons/windowIcons.js";
 
-const DEFAULT_LUCIDE_STROKE_WIDTH = 1.5;
 type WelcomeScreenOpenReason =
   | "startup-provider-required"
   | "manual-login"
@@ -154,6 +166,7 @@ export function Root(props: RootProps) {
         <ServiceProvider
           services={props.services}
           composerClientNamespace={props.composerClientNamespace}
+          terminalOwnerId={props.terminalOwnerId}
         >
           <PlatformProvider platform={props.platform}>
             <StoreProvider
@@ -172,7 +185,9 @@ export function Root(props: RootProps) {
                             <RequestSecurityHost />
                             <MarketingTouchProvider desktop={props.isDesktop === true}>
                               <RemoteConnectionProgressProvider>
-                                <RootInner {...props} />
+                                <DataSyncDialogProvider>
+                                  <RootInner {...props} />
+                                </DataSyncDialogProvider>
                               </RemoteConnectionProgressProvider>
                             </MarketingTouchProvider>
                           </RewardsProvider>
@@ -214,6 +229,8 @@ function RootInner({
   webRemoteControlTerminalTransportState,
   initialWorkspaceLoadingFallback,
 }: RootProps) {
+  const credentialRecovery = useCredentialStoreRecovery(isDesktop === true);
+  useInterfaceModeTelemetry(platform, isDesktop === true);
   useEffect(() => {
     setRequestSecurityReporter(platform);
     setMcpStorePlatform(platform);
@@ -252,7 +269,7 @@ function RootInner({
   // 工作区级 ServiceProvider 内（远程 Host 的 accessor），由它们取数会拿到另一台 Host 的答案。
   useDynamicWorkflowAvailabilityLoader(services.codingPlanSubscriptionService);
 
-  const { intl, locale } = useZCodeIntl();
+  const { intl, locale, localeResolved } = useZCodeIntl();
   const handleRemoteConnectionTargetChange = useSourceServerUpdateNotifications({
     enabled: isDesktop === true,
     management: services.sourceServerManagementService,
@@ -397,6 +414,7 @@ function RootInner({
         askUserQuestionAutoResolutionEnabled:
           appSettings.askUserQuestionAutoResolutionEnabled !== false,
         modelIoFullRetentionEnabled: appSettings.modelIoFullRetentionEnabled === true,
+        pluginAutoRecommendationEnabled: appSettings.pluginAutoRecommendationEnabled === true,
       })
       .catch((error) => {
         logger.warn("[settings] 初始化运行时偏好失败", error);
@@ -406,6 +424,7 @@ function RootInner({
         askUserQuestionAutoResolutionEnabled:
           appSettings.askUserQuestionAutoResolutionEnabled !== false,
         modelIoFullRetentionEnabled: appSettings.modelIoFullRetentionEnabled === true,
+        pluginAutoRecommendationEnabled: appSettings.pluginAutoRecommendationEnabled === true,
       })
       .catch((error) => {
         logger.warn("[settings] 初始化 Bot 运行时偏好失败", error);
@@ -413,6 +432,7 @@ function RootInner({
   }, [
     appSettings?.askUserQuestionAutoResolutionEnabled,
     appSettings?.modelIoFullRetentionEnabled,
+    appSettings?.pluginAutoRecommendationEnabled,
     services.botsService,
     services.zcodeAgentService,
   ]);
@@ -691,6 +711,7 @@ function RootInner({
     handleOpenFolderFromWorkspaceMenu,
     handleCreateTask,
     handleBackFromSettings,
+    handleOpenTaskFromSettings,
   } = useRootWorkspaceActions({
     intl,
     platform,
@@ -700,6 +721,7 @@ function RootInner({
     activeWorkspacePath,
     activeWorkspaceIdentity,
     supportsSettings,
+    isDesktop,
     allowOpenWorkspace,
     preferDirectoryBrowser: shouldPreferDirectoryBrowser,
     openDirectoryBrowser: handleOpenDirectoryBrowser,
@@ -779,6 +801,9 @@ function RootInner({
         ? remoteConnectionOpenPreference?.preferredWorkspaceTabId
         : undefined,
   });
+  const waitForRemoteWorkspaceConnection = useRemoteWorkspaceConnectionGate(
+    reconnectingRemoteWorkspaceKeys,
+  );
 
   async function openPreparedRemoteProjectWorkspace(target: {
     expectedMembershipId?: string;
@@ -799,6 +824,7 @@ function RootInner({
         Object.values(useRemoteWorkspaceSessionStore.getState().sessionsById).find(
           (session) => session.workspaceIdentity === identity,
         ),
+      waitForPendingConnection: waitForRemoteWorkspaceConnection,
       connect: handleConnectRemote,
       cancel: handleCancelRemoteProject,
       bind: async (remoteSessionId, path, isCurrent) => {
@@ -856,6 +882,7 @@ function RootInner({
       }
     });
   }, [handleReconnectRemoteWorkspace, platform]);
+  useWebRemoteControlRendererActions(platform);
 
   useEffect(() => {
     // Bugfix: fileDisplay 默认不传 basePath 时需要落到“当前激活 workspace”。
@@ -1015,13 +1042,12 @@ function RootInner({
     startDraftInWorkspace,
     startNewTaskFromActiveWorkspace,
     openWorkspace: handleOpenWorkspace,
-    openWorkspacePath: (path) => {
-      void handleSelectProject(path);
-    },
+    openWorkspacePath: handleSelectProject,
     setWorkspaceActionError,
     allowOpenWorkspace,
     isDesktop,
     locale,
+    localeResolved,
     tabs,
     activeWorkspacePath,
     activeWorkspaceIdentity,
@@ -1469,6 +1495,22 @@ function RootInner({
     previousRemoteConnectionInProgressRef.current = remoteConnectionInProgress;
   }, [remoteConnectionInProgress, resetRemoteConnectionLogs]);
 
+  // 修复原因：没有打开的项目时 Root 只渲染独立设置页，迁移向导没有挂载，数据同步页「迁移」点了没有反应。
+  // 两个分支共用同一个迁移向导节点；没有项目时 workspacePath 为空，用户级的项照常导入（见 useSettingsSync）。
+  const onboardingDialog = (
+    <ScopedErrorBoundary
+      scope="onboarding-dialog"
+      resetKeys={[workspaceShellIdentity?.trim() || workspaceShellPath]}
+      variant="silent"
+    >
+      <OnboardingDialog
+        workspacePath={workspaceShellPath || undefined}
+        workspaceIdentity={workspaceShellIdentity}
+        isDesktop={isDesktop}
+      />
+    </ScopedErrorBoundary>
+  );
+
   const settingsLayerProps = {
     isDesktop,
     isMacDesktop,
@@ -1476,6 +1518,7 @@ function RootInner({
     isWebRemoteControl: Boolean(webRemoteControlWorkspaceSwitcher),
     captionWorkspacePath: activeWorkspacePath,
     onBack: activeWorkspacePath ? handleBackFromSettings : undefined,
+    onOpenTask: handleOpenTaskFromSettings,
     onCreateTask: handleCreateTask,
     onOpenWorkspace: handleOpenWorkspace,
     allowOpenWorkspace,
@@ -1483,6 +1526,8 @@ function RootInner({
     onLogout: user ? handleLogout : undefined,
     user,
   };
+
+  if (credentialRecovery.state) return <CredentialStoreRecovery recovery={credentialRecovery} />;
 
   if (isStartupRenderBlocked) {
     const loadingLabel = intl.formatMessage({ id: "common.loading" });
@@ -1526,6 +1571,7 @@ function RootInner({
         >
           <SettingsPage {...settingsLayerProps} />
         </ScopedErrorBoundary>
+        {onboardingDialog}
       </RootShell>
     );
   }
@@ -1617,6 +1663,7 @@ function RootInner({
                 remoteWorkspaceSessions={remoteWorkspaceSessions}
                 allowRemoteWorkspace={allowRemoteWorkspace}
                 handleBackFromSettings={handleBackFromSettings}
+                handleOpenTaskFromSettings={handleOpenTaskFromSettings}
                 handleLogout={user ? handleLogout : undefined}
                 onLogin={!user ? handleOpenLoginEntry : undefined}
                 user={user}
@@ -1639,17 +1686,7 @@ function RootInner({
             </RemoteProjectPresentationProvider>
           </RemoteWorkspaceControllerProvider>
         )}
-        <ScopedErrorBoundary
-          scope="onboarding-dialog"
-          resetKeys={[workspaceShellIdentity?.trim() || workspaceShellPath]}
-          variant="silent"
-        >
-          <OnboardingDialog
-            workspacePath={workspaceShellPath || undefined}
-            workspaceIdentity={workspaceShellIdentity}
-            isDesktop={isDesktop}
-          />
-        </ScopedErrorBoundary>
+        {onboardingDialog}
       </OccupationOnboarding>
     </RootShell>
   );

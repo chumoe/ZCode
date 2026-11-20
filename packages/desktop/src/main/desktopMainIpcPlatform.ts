@@ -25,7 +25,9 @@ import {
   type WebRemoteControlWorkspaceTarget,
   type WindowControlsOverlayReadyPayload,
 } from "@zcode/shared";
-import { getInstalledEditors } from "./editors.js";
+import { getAppIconDataUrl, getInstalledEditors } from "./editors.js";
+import { createFileApplicationService } from "@desktop/main/file-open-apps/index.js";
+import type { FileApplicationTarget } from "@zcode/shared";
 import { getApplicationIcon } from "./applicationIcons.js";
 import { exportLogs } from "./exportLogs.js";
 import { resolveCommunityUrl } from "./desktopCommandHandlers.js";
@@ -60,6 +62,8 @@ import { createTempTextAttachment } from "./tempTextAttachment.js";
 import { materializeWorkflowArtifactFile } from "./workflowArtifactFile.js";
 import { registerDesktopSaveFileIpcHandler } from "./desktopSaveFile.js";
 import { registerDesktopPrintToPdfIpcHandler } from "./desktopPrintToPdf.js";
+import { registerDesktopMicrophoneIpcHandlers } from "./microphone-access/index.js";
+import { registerDesktopCaptureBrowserGuestPageIpcHandler } from "./desktopCaptureBrowserGuestPage.js";
 import { registerDesktopCommandIpcHandler } from "./desktopCommandIpc.js";
 import { registerCuaPipActiveSessionIpc } from "./desktopCuaPipIpc.js";
 
@@ -153,6 +157,8 @@ export function registerPlatformIpcHandlers(options: {
 
   registerDesktopSaveFileIpcHandler(options.logger);
   registerDesktopPrintToPdfIpcHandler(options.logger);
+  registerDesktopMicrophoneIpcHandlers(options.logger);
+  registerDesktopCaptureBrowserGuestPageIpcHandler(options.logger);
 
   ipcMain.handle(
     PlatformChannels.CreateTempTextAttachment,
@@ -435,6 +441,18 @@ export function registerPlatformIpcHandlers(options: {
   });
   ipcMain.handle(PlatformChannels.GetInstalledEditors, (_event, filePath?: string) =>
     getInstalledEditors(typeof filePath === "string" ? filePath : undefined),
+  );
+  const fileApplications = createFileApplicationService({
+    getIcon: (id, path) => getAppIconDataUrl(id, path),
+    logger: options.logger,
+  });
+  ipcMain.handle(PlatformChannels.GetFileApplications, (_event, target: FileApplicationTarget) =>
+    fileApplications.getFileApplications(target),
+  );
+  ipcMain.handle(
+    PlatformChannels.OpenFileWithApplication,
+    (_event, payload: { applicationId: string; target: FileApplicationTarget }) =>
+      fileApplications.openFileWithApplication(payload?.applicationId, payload?.target),
   );
   ipcMain.handle(
     PlatformChannels.GetApplicationIcon,

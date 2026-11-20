@@ -150,6 +150,7 @@ Delivery semantics:
 
 - Scheduled and manual runs of a Bot-origin automation both deliver their terminal result to the original chat.
 - The scheduler registers the Bot subscription before sending the prompt, so a fast terminal event cannot beat the listener.
+- The Agent `turn.started` event must preserve the Host-admitted `automationId` across the strict App protocol boundary. The services projection must emit `task_run_started` before that run's chunks or terminal event; a reused private subscription uses this start event to replace the previous input id and clear per-run buffers.
 - Automation delivery uses `summary_changes`: intermediate assistant chunks and tool traces do not create extra chat messages; completion sends the final assistant result plus change summary, and failure sends one localized failure message.
 - The persisted target survives application restart. Workspace isolation still uses `workspaceIdentity?.trim() || workspacePath`; filesystem execution continues to use `workspacePath`.
 - If the Bot was deleted, disabled, changed provider, lost credentials, or the provider send fails, the service records a throttled warning and leaves automation dispatch/outcome settlement untouched. Bot delivery is best-effort and is not a scheduler retry authority.
@@ -200,12 +201,14 @@ Discord and WeCom remain reserved providers. Future Discord support should use s
 
 Bots accept inbound attachments from every implemented provider. Provider adapters parse native media payloads into a common bot attachment shape; the service downloads or decodes the bytes, stores them under the ZCode app data directory in `bot-attachments/`, and never writes them into the user workspace.
 
+Feishu/Lark rich-text (`post`) messages include files from the top-level `files` array as well as inline images. Text and files in the same message must reach the same task input; each file keeps its provider file key and filename and uses the message resource download path, just like a standalone `file` message.
+
 Attachment handling follows the ZCode prompt capability model:
 
 - Images become `ZCodePromptAttachment` entries with `kind: "image"` and are sent as ZCode image content when the active Agent supports image prompts.
 - Audio becomes `ZCodePromptAttachment` entries with `kind: "audio"` and is sent as ZCode audio content when the active Agent supports audio prompts.
 - Video and generic files are cached locally and appended to the prompt as file context with filename, MIME type, size, and local cache path.
-- A message can include up to 4 attachments, with a 5MB limit per attachment.
+- A message can include up to 4 attachments. The common Bot service does not impose a per-attachment byte limit; successfully downloaded attachments proceed through the existing cache and task submission path. Provider download failures and downstream attachment capability checks still apply.
 - If the user sends attachments without text, the bot uses the default prompt: `请查看附件并根据内容协助我。`
 
 ## Providers

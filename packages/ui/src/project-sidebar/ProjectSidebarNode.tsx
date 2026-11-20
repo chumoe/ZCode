@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { shallow } from "zustand/shallow";
-import { Plug } from "lucide-react";
+import { FolderGit2, Plug } from "lucide-react";
 import type {
   IProjectService,
   IRemoteProjectService,
@@ -18,6 +18,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { setPendingSettingsSectionIntent } from "@/lib/settingsNavigation.js";
 import { toast } from "@/components/ui/toast.js";
 import { logger } from "@/logger.js";
+import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 
 export function runProjectAction(body: () => Promise<void>) {
   void body().catch((cause) => {
@@ -49,6 +50,8 @@ type Props = Pick<
     onEdit(value: { project: VirtualProject }): void;
     onViewFiles(project: VirtualProject, rootPath: string): Promise<void>;
     remoteActions(project: VirtualProject): ProjectRowAction[];
+    /** 仅本机桌面且 Host 提供受管 worktree 服务时传入（docs/git/worktree.md §3.6）。 */
+    onOpenWorktrees?(project: VirtualProject): void;
   };
 
 // Bug 根因：任务活动每秒更新目录，父组件随之重建所有项目的菜单与回调，穿透内容层 memo。
@@ -67,6 +70,7 @@ export const ProjectSidebarNode = memo(
     onEdit,
     onViewFiles,
     remoteActions,
+    onOpenWorktrees,
     ...display
   }: Props) {
     const { intl } = useZCodeIntl();
@@ -74,12 +78,18 @@ export const ProjectSidebarNode = memo(
     const tabStore = useTabStoreApi();
     const msg = (id: string) => intl.formatMessage({ id: `project.${id}` });
     const sourceServerId = projectSourceServerId(project);
+    // 本机偏好只控制桌面行内标签，手机与完整身份详情仍保留设备名。
+    const hideDeviceName = useZCodeStoreWithDefault(
+      (state) => Boolean(isDesktop) && state.hideProjectDeviceNames,
+      false,
+    );
     const { refresh, availability } = display;
     return (
       <ProjectNode
         {...display}
         project={project}
         remoteHost={remoteHost}
+        hideDeviceName={hideDeviceName}
         onOpenDeviceSettings={
           isDesktop && sourceServerId
             ? () => {
@@ -88,8 +98,27 @@ export const ProjectSidebarNode = memo(
               }
             : undefined
         }
+        onManageProjects={
+          isDesktop
+            ? () => {
+                setPendingSettingsSectionIntent("projects");
+                tabStore.getState().openSettingsTab();
+              }
+            : undefined
+        }
         additionalActions={[
           ...remoteActions(project),
+          // worktree 只由本机 Host 管理；远程项目与手机远控不显示入口。
+          ...(onOpenWorktrees && !remoteHost && project.hostId === "local"
+            ? [
+                {
+                  id: "worktrees",
+                  label: msg("worktrees"),
+                  icon: FolderGit2,
+                  run: () => onOpenWorktrees(project),
+                },
+              ]
+            : []),
           ...(remoteHost && remoteHost.connectionStatus !== "online"
             ? [
                 {

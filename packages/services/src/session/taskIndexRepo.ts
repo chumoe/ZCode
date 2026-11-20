@@ -1,4 +1,5 @@
 import { TaskGroupRepository } from "#src/task-groups/index.js";
+import { pauseAutomationsForArchivedTask } from "#src/session/automationRepo.js";
 import {
   isTasksStorageMigrated,
   isTasksStoragePrepared,
@@ -23,7 +24,11 @@ import type {
 
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import { getTasksIndexDatabasePath, getZCodeDataRootDir } from "#src/paths.js";
-import { projectStorage, type ProjectMigrationContext } from "#src/project-storage/index.js";
+import {
+  createProjectDataRepository,
+  projectStorage,
+  type ProjectMigrationContext,
+} from "#src/project-storage/index.js";
 import { runTasksDatabaseMigrations } from "#src/session/tasksDatabase/migrations.js";
 
 const require = createRequire(import.meta.url);
@@ -74,6 +79,10 @@ interface TaskIndexRow {
   title_overridden: number;
   searchable_text: string;
   meta_json: string;
+  /** 任务 cwd；本地普通任务与 workspace_path 相同，worktree 任务指向 worktree 内。 */
+  root_path?: string | null;
+  /** 受管 worktree 根目录（docs/git/worktree.md §6.6.1）；不是 worktree 任务时为 NULL。 */
+  worktree_root?: string | null;
 }
 
 interface LegacyAcpTaskIndexRow extends TaskIndexRow {
@@ -121,10 +130,21 @@ function resolveTaskIndexRowWorkspaceIdentity(row: TaskIndexRow): string | undef
   return undefined;
 }
 
+/** worktree 任务的 cwd 与根目录只来自列（唯一数据源），不写进 meta_json。 */
+function readWorktreePlacement(row: TaskIndexRow): Pick<ZCodeTaskMeta, "worktreeRoot" | "cwd"> {
+  const worktreeRoot = row.worktree_root ?? undefined;
+  const cwd = row.root_path && row.root_path !== row.workspace_path ? row.root_path : undefined;
+  return {
+    ...(worktreeRoot ? { worktreeRoot } : {}),
+    ...(cwd ? { cwd } : {}),
+  };
+}
+
 function rowToMeta(row: TaskIndexRow): ZCodeTaskMeta {
   const meta = readPresentation(row);
   return {
     ...meta,
+    ...readWorktreePlacement(row),
     title: row.title_overridden === 1 ? row.title : (row.cli_title ?? ""),
     titleOverridden: row.title_overridden === 1 || row.cli_title_source === "custom",
     createdAt: row.cli_created_at ?? 0,
@@ -191,7 +211,9 @@ function readPresentation(row: TaskIndexRow): ZCodeTaskMeta {
 
 /** 序列化 meta 到 meta_json。cron 身份随 meta 一起写入（单一来源），另在 writeRecord 投影到 cron_automation_id 索引列。 */
 function serializeMetaJson(meta: ZCodeTaskMeta): string {
-  return JSON.stringify(meta);
+  // worktreeRoot / cwd 是列投影，写回 meta_json 会形成第二份数据源。
+  const { worktreeRoot: _worktreeRoot, cwd: _cwd, ...persisted } = meta;
+  return JSON.stringify(persisted);
 }
 
 function normalizeLimit(limit: number | undefined): number | null {
@@ -351,6 +373,11 @@ export class TaskIndexRepo {
     return projectStorage.repository(this.getDatabase(), this.storageHostId);
   }
 
+  async getProjectDataRepository() {
+    await this.ensureReady();
+    return createProjectDataRepository(this.getDatabase(), this.storageHostId);
+  }
+
   async ensureReady(): Promise<void> {
     const path = this.startupDbPath ?? getTasksIndexDatabasePath();
     if (this.dbPath && this.dbPath !== path) {
@@ -508,7 +535,7 @@ export class TaskIndexRepo {
         deleted,
         title_overridden,
         searchable_text,
-        meta_json, cli_title, cli_title_source, cli_created_at, cli_updated_at, cli_last_outcome, cli_deleted, handoff_pending
+        meta_json, cli_title, cli_title_source, cli_created_at, cli_updated_at, cli_last_outcome, cli_deleted, handoff_pending, root_path, worktree_root
       FROM tasks
       WHERE workspace_key = ? AND task_id = ?`,
     );
@@ -744,7 +771,7 @@ export class TaskIndexRepo {
           deleted,
           title_overridden,
           searchable_text,
-          meta_json, cli_title, cli_title_source, cli_created_at, cli_updated_at, cli_last_outcome, cli_deleted, handoff_pending
+          meta_json, cli_title, cli_title_source, cli_created_at, cli_updated_at, cli_last_outcome, cli_deleted, handoff_pending, root_path, worktree_root
         FROM tasks
         WHERE workspace_key = ? AND task_id = ?`,
       )
@@ -1008,6 +1035,10 @@ export class TaskIndexRepo {
           workspaceKey(params.meta),
           params.meta.taskId,
         );
+        db.prepare(
+          "UPDATE tasks SET forked_from_task_id=coalesce(forked_from_task_id,?) WHERE workspace_key=? AND task_id=?",
+        ).run(params.meta.forkedFromTaskId ?? null, workspaceKey(params.meta), params.meta.taskId);
+        projectStorage.admitTaskIdentity(db, params.meta, this.storageHostId);
         const persisted = this.getTaskRow(params.meta)!;
         this.admitTaskGroup(
           rowToMeta(persisted),
@@ -1123,6 +1154,9 @@ export class TaskIndexRepo {
           params.taskId,
         );
         const result = rowToMeta(this.getTaskRow(params)!);
+        // 归档是一次性暂停事件；重复请求不能覆盖用户在归档后手动开启的选择。
+        if (params.patch.archived === true && row.archived !== 1)
+          pauseAutomationsForArchivedTask(db, row.workspace_key, row.task_id);
         this.admitTaskGroup(result, row.archived === 1, row.deleted === 1);
         db.exec("COMMIT");
         return result;
@@ -1231,7 +1265,7 @@ export class TaskIndexRepo {
           deleted,
           title_overridden,
           searchable_text,
-          meta_json, cli_title, cli_title_source, cli_created_at, cli_updated_at, cli_last_outcome, cli_deleted, handoff_pending
+          meta_json, cli_title, cli_title_source, cli_created_at, cli_updated_at, cli_last_outcome, cli_deleted, handoff_pending, root_path, worktree_root
         FROM tasks
         WHERE (@workspace_key IS NULL OR workspace_key = @workspace_key)
           AND cli_created_at IS NOT NULL
@@ -1275,6 +1309,7 @@ export class TaskIndexRepo {
         WHERE workspace_key = @workspace_key
           AND deleted = 1
           AND (@provider IS NULL OR provider = @provider)
+        UNION SELECT task_id FROM task_purge WHERE workspace_key=@workspace_key AND state='deleted'
         ORDER BY task_id`,
       )
       .all({
@@ -1288,29 +1323,39 @@ export class TaskIndexRepo {
     params: ZCodeTaskListQuery & { provider?: ZCodeProvider },
   ): Promise<ZCodeTaskListResult> {
     await this.ensureReady();
-    const workspaceKeys = normalizeWorkspaceKeys(params.workspaceScopes);
-    if (workspaceKeys.length === 0) {
+    const scopes = params.workspaceScopes === "host" ? [] : params.workspaceScopes;
+    const workspaceKeys = normalizeWorkspaceKeys(scopes);
+    if (params.workspaceScopes !== "host" && workspaceKeys.length === 0) {
       return { items: [], total: 0, hasMore: false };
     }
 
     const search = params.search?.trim();
     const normalizedSearchLike =
       search && search.length > 0 ? `%${search.toLocaleLowerCase()}%` : null;
-    const where = [
-      "deleted = 0",
-      "coalesce(cli_deleted,0) = 0",
-      "cli_created_at IS NOT NULL",
-      `workspace_key IN (${workspaceKeys.map(() => "?").join(", ")})`,
-    ];
-    const args: Array<string | number> = [...workspaceKeys];
+    const where = ["deleted = 0", "coalesce(cli_deleted,0) = 0", "cli_created_at IS NOT NULL"];
+    const args: Array<string | number> = [];
+    if (params.workspaceScopes === "host") {
+      // 旧搜索由 tabStore 裁剪 workspace，未重开的历史永远不可见。
+      // 在索引 owner 查询全部任务，同时排除本地数据库里的其他 Host 缓存。
+      where.push("host_id = ?");
+      args.push(this.storageHostId ?? "local");
+    } else {
+      where.push(`workspace_key IN (${workspaceKeys.map(() => "?").join(", ")})`);
+      args.push(...workspaceKeys);
+    }
     if (params.provider) {
       appendZCodeAgentIndexedProviderFilter(where, args, params.provider);
+    }
+    if (params.taskIds) {
+      if (params.taskIds.length === 0) return { items: [], total: 0, hasMore: false };
+      where.push(`task_id IN (${params.taskIds.map(() => "?").join(", ")})`);
+      args.push(...params.taskIds);
     }
     if (params.kind === "pinned") {
       where.push("pinned = 1", "archived = 0");
     } else if (params.kind === "archived") {
       where.push("archived = 1");
-    } else {
+    } else if (params.kind !== "all") {
       where.push("pinned = 0", "archived = 0");
     }
     if (normalizedSearchLike) {
@@ -1363,14 +1408,14 @@ export class TaskIndexRepo {
           deleted,
           title_overridden,
           searchable_text,
-          meta_json, cli_title, cli_title_source, cli_created_at, cli_updated_at, cli_last_outcome, cli_deleted, handoff_pending
+          meta_json, cli_title, cli_title_source, cli_created_at, cli_updated_at, cli_last_outcome, cli_deleted, handoff_pending, root_path, worktree_root
         FROM tasks
         WHERE ${whereClause}
         ORDER BY ${orderBy}${limit === null ? "" : " LIMIT ?"}`,
       )
       .all(...listArgs) as unknown as TaskIndexRow[];
     const workspacePurposeByKey = new Map(
-      params.workspaceScopes.flatMap((scope) =>
+      scopes.flatMap((scope) =>
         scope.workspacePurpose ? [[workspaceKey(scope), scope.workspacePurpose] as const] : [],
       ),
     );
@@ -1384,6 +1429,95 @@ export class TaskIndexRepo {
       total,
       hasMore: total > rows.length,
     };
+  }
+
+  async isTaskArchived(target: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+  }): Promise<boolean> {
+    await this.ensureReady();
+    const row = this.getTaskRow(target);
+    return row?.archived === 1 && row.deleted === 0;
+  }
+
+  async listPermanentlyDeletedTaskIds(target: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+  }): Promise<string[]> {
+    await this.ensureReady();
+    const rows = this.getDatabase()
+      .prepare("SELECT task_id FROM task_purge WHERE workspace_key=? AND state='deleted'")
+      .all(workspaceKey(target)) as Array<{ task_id: string }>;
+    return rows.map((row) => row.task_id);
+  }
+
+  /** 组织态准入在同一事务内检查归档；跨窗口取消归档不能越过已确认的删除。 */
+  async reservePermanentDeletion(target: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+  }): Promise<boolean> {
+    await this.ensureReady();
+    return this.enqueueWrite(target, () => {
+      const db = this.getDatabase();
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const key = workspaceKey(target);
+        const receipt = db
+          .prepare("SELECT state FROM task_purge WHERE workspace_key=? AND task_id=?")
+          .get(key, target.taskId);
+        const row = this.getTaskRow(target);
+        if (!receipt && (!row || row.archived !== 1 || row.deleted === 1)) {
+          db.exec("COMMIT");
+          return false;
+        }
+        db.prepare("INSERT OR IGNORE INTO task_purge VALUES(?,?,'pending')").run(
+          key,
+          target.taskId,
+        );
+        db.exec("COMMIT");
+        return true;
+      } catch (error) {
+        if (db.isTransaction) db.exec("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
+  async releasePermanentDeletion(target: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+  }): Promise<void> {
+    await this.ensureReady();
+    this.getDatabase()
+      .prepare("DELETE FROM task_purge WHERE workspace_key=? AND task_id=? AND state='pending'")
+      .run(workspaceKey(target), target.taskId);
+  }
+
+  async completePermanentDeletion(
+    target: { workspacePath: string; workspaceIdentity?: string; taskId: string },
+    sessionIds: string[],
+  ): Promise<void> {
+    await this.ensureReady();
+    const db = this.getDatabase();
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const id of sessionIds) {
+        const key = workspaceKey(target);
+        // 只保留身份屏障；标题、正文搜索缓存与组织记录必须随会话物理移除。
+        db.prepare(
+          "INSERT INTO task_purge VALUES(?,?,'deleted') ON CONFLICT(workspace_key,task_id) DO UPDATE SET state='deleted'",
+        ).run(key, id);
+        for (const table of ["tasks", "task_group_members", "task_group_admissions"])
+          db.prepare(`DELETE FROM ${table} WHERE workspace_key=? AND task_id=?`).run(key, id);
+      }
+      db.exec("COMMIT");
+    } catch (error) {
+      if (db.isTransaction) db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   async getTaskMeta(params: {

@@ -127,10 +127,21 @@ export const sourceServerUpdateRequestSchema = z
   .object({
     profileId: nonEmptyStringSchema,
     force: z.boolean().optional(),
+    /** 用户已确认把较新的远端切换到本机 Desktop 版本；方向由远端 CLI 判定。 */
+    allowDowngrade: z.boolean().optional(),
     expectedTarget: sourceServerUpdateTargetSchema.optional(),
   })
   .strict();
 export type SourceServerUpdateRequest = z.input<typeof sourceServerUpdateRequestSchema>;
+
+/** 取消更新只接收线路身份；是否处于可取消的本机阶段由 Host 判断（R3 §6.3）。 */
+export const sourceServerUpdateCancelProfileIdSchema = z.string().uuid();
+
+/**
+ * 设备级生命周期操作（停止、重启远端服务，RDLC-01）只接收设备身份；具体走哪条连接由 Host 路由，
+ * Renderer 不传 profileId。
+ */
+export const sourceServerLifecycleSourceIdSchema = z.string().uuid();
 
 const connectionProfileBaseShape = {
   profileId: z.string().uuid(),
@@ -302,6 +313,16 @@ export const sourceServerRunningTaskSchema = z
 export type SourceServerRunningTask = z.infer<typeof sourceServerRunningTaskSchema>;
 export const sourceServerRunningTasksSchema = z.array(sourceServerRunningTaskSchema);
 
+/**
+ * 停止 / 重启远端服务确认前按设备读取的运行中任务（RDLC-01）。`available: false` 表示设备没有提供
+ * 可信清单（远端输出 null、命令失败或输出不符 schema），不能当作“没有任务”；空数组才是没有任务。
+ */
+export const sourceServerRunningTasksResultSchema = z.discriminatedUnion("available", [
+  z.object({ available: z.literal(true), tasks: sourceServerRunningTasksSchema }).strict(),
+  z.object({ available: z.literal(false) }).strict(),
+]);
+export type SourceServerRunningTasksResult = z.infer<typeof sourceServerRunningTasksResultSchema>;
+
 /** 只读安装预览；sizeBytes 是安装包实际大小，不代表解压后的磁盘占用。 */
 export const sourceServerInstallPreviewSchema = z
   .object({
@@ -323,6 +344,10 @@ export const sourceServerConnectionStateSnapshotSchema = z
     availableVersion: nonEmptyStringSchema.optional(),
     minimumVersion: nonEmptyStringSchema.optional(),
     upgradeTarget: z.enum(["controller", "server"]).optional(),
+    /** 远端当前 release 由显式降级安装时，被替换的版本；向导据此不自动升级。 */
+    downgradedFrom: nonEmptyStringSchema.optional(),
+    /** 更新处于本机阶段（probe、release 解析与本机下载），`cancelSourceUpdate` 可取消（R3 §6.3）。 */
+    updateCancelable: z.literal(true).optional(),
     errorCode: publicZCodeErrorCodeSchema.optional(),
     retryable: z.boolean().optional(),
     installPreview: sourceServerInstallPreviewSchema.optional(),
@@ -413,7 +438,7 @@ export type SourceServerInstallProgress = z.infer<typeof sourceServerInstallProg
 export const sourceServerOperationLogSchema = z
   .object({
     profileId: z.string().uuid(),
-    operation: z.enum(["connect", "update"]),
+    operation: z.enum(["connect", "update", "stop", "restart"]),
     phase: nonEmptyStringSchema,
     level: z.enum(["info", "warn", "error"]),
     message: z.string(),

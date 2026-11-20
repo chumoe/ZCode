@@ -1,4 +1,6 @@
 import { hostname } from "node:os";
+import { join } from "node:path";
+import { createLegacyServerCredentialCipher } from "@zcode/shared/credential-security";
 import {
   createServerHostServices,
   disposeServiceResourcesAndWait,
@@ -8,17 +10,27 @@ import {
   createTopicResourcePeers,
 } from "@zcode/services/node";
 import { IZCodeAgentService } from "@zcode/services";
-import { ZCODE_VERSION } from "@zcode/shared";
+import { ZCODE_APP_VERSION_ENV, ZCODE_VERSION } from "@zcode/shared";
 import { createCoreHttpServer } from "./http.js";
 import { createIngressToken } from "./ingressToken.js";
 import { installParentDisconnectHandler } from "./parentDisconnect.js";
 import { resolveCoreServerId } from "./serverIdentity.js";
 import { createTaskActivityTracker } from "./taskActivityTracker.js";
+import {
+  CORE_HEARTBEAT_INTERVAL_MS,
+  SERVER_CREDENTIAL_FORMAT,
+  SERVER_CREDENTIAL_FORMAT_ENV,
+} from "../contracts.js";
 import { resolveServerLayout } from "../runtime/paths.js";
 
 declare const __ZCODE_BUILTIN_PROVIDER_CONFIG_JSON__: string | undefined;
 
 export async function runServerCore(generation: number): Promise<void> {
+  // Bug 原因：Agent 的模型请求头从 ZCODE_APP_VERSION 读 App 版本，缺失时回退到 CLI 包版本
+  // （0.17.0）。本地由 Desktop main 注入；远端 Core 由 SSH/WSL/Docker exec → Supervisor fork 拉起，
+  // 整条链都没有这个 env，远端请求于是报 0.17.0（按客户端版本拦截的网关会拒绝）。升级时旧 Supervisor
+  // 会拉起新 release 的 Core，所以只能由 Core 用自身编译期版本写入，Agent spawn 时继承。
+  process.env[ZCODE_APP_VERSION_ENV] = ZCODE_VERSION;
   let shutdown: ((reason: string) => Promise<void>) | undefined;
   let parentDisconnected = false;
   let disposeParentDisconnectHandler = (): void => undefined;
@@ -47,12 +59,21 @@ export async function runServerCore(generation: number): Promise<void> {
     );
   }
   const sourceServerId = (await resolveCoreServerId()) ?? hostname() ?? "zcode-server";
+  // 旧 Supervisor 会自行回滚，候选 Core 在 owner 换代前必须保持旧格式可读。
+  const legacyUpdateOwner =
+    process.env[SERVER_CREDENTIAL_FORMAT_ENV] !== String(SERVER_CREDENTIAL_FORMAT);
+  const credentialCipherProvider = legacyUpdateOwner
+    ? await createLegacyServerCredentialCipher({
+        filePath: join(getAppConfigDir(), "credentials.json"),
+      })
+    : undefined;
   const { services, workspaceIdentityMapper, migrationFailedPathCount } =
     await createServerHostServices({
       sourceServerId,
       zcodeBuiltinProviderConfigFilePath,
       providerProvisioningTargetEnabled: true,
-    topicResourceRelayChannel: (request) => topicResourcePeers.getChannel(request),
+      credentialCipherProvider,
+      topicResourceRelayChannel: (request) => topicResourcePeers.getChannel(request),
     });
   const taskActivityTracker = createTaskActivityTracker(services.getOptional(IZCodeAgentService));
   const ingressToken = await createIngressToken(layout);
@@ -129,7 +150,7 @@ export async function runServerCore(generation: number): Promise<void> {
       .finally(() => {
         heartbeatInFlight = undefined;
       });
-  }, 10_000);
+  }, CORE_HEARTBEAT_INTERVAL_MS);
   shutdown = async (reason: string): Promise<void> => {
     if (shutdownStarted) return;
     shutdownStarted = true;

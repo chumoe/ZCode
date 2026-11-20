@@ -58,7 +58,7 @@ Read this file in full before authoring. Reread truncated ranges in smaller call
 ### External resources
 
 - Floating UI Core 1.7.3 / DOM 1.7.4, Lucide 1.17.0, and D3 7.9.0 are bundled. Keep their prescribed script URLs unchanged: the Desktop host resolves those exact URLs locally, and standalone export embeds the files. Use a literal `<script src="...">` for D3 so exports remain offline; do not add another copy or fetch a fallback. Other versions, query strings, libraries, fonts, and map data are not bundled by this rule.
-- The CSP allows only `cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`, `unpkg.com`, `fonts.googleapis.com`, `fonts.gstatic.com`, and `fonts.bunny.net`. Other origins are blocked and fail silently.
+- The CSP allows only `cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`, `unpkg.com`, `fonts.googleapis.com`, `fonts.gstatic.com`, `fonts.bunny.net`, and `zcode.z.ai`. Other origins are blocked and fail silently.
 
 ## Exporting an existing visualization
 
@@ -275,7 +275,7 @@ Use the host typography scale: body and controls use the body size; h1 is body +
 
 ## ZCode host compatibility
 
-- Emit inline references only when the Desktop context advertises Gen UI and supplies its session output directory; otherwise return an ordinary HTML artifact. Paths must be absolute on the executor, inside that session directory, with no symlinks or parent traversal. The host renders completed assistant messages only.
+- Emit inline references only when the Desktop context advertises Gen UI and the environment lists its session output directory; otherwise return an ordinary HTML artifact. Paths must be absolute on the executor, inside that session directory, with no symlinks or parent traversal. The host renders completed assistant messages only.
 - The frame starts at 240px, follows content height up to 10,000px, and has a host-compensated 5px paint gutter. These are implementation limits, not a target height or a reason to add padding. Secondary annotations are optional; there is no required footer.
 - `window.zcode` exposes widget state, state saving, follow-up messages, and `openExternal({ href })`. See [API](references/api.md) for external links, acknowledgement, cancellation, and Tweak object bindings. The standalone export supplies state fallback, not Agent access.
 - Older Unicode references and `::visualize{path="..."}` references remain supported for historical replies. Generate the `::visualize` JSON reference described above for new replies.

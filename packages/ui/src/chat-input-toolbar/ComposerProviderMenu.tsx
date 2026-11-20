@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { ChevronLeftIcon, ChevronRightIcon, Loader2Icon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, LoaderCircle } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { ModelSelectGroup } from "@/ModelConfigSelect.js";
 import { ProviderLogo } from "@/settings/model-provider-section/ProviderLogo.js";
@@ -101,6 +101,7 @@ export function ComposerProviderMenu({
                 setOpen(false);
               }}
             >
+              <ProviderLogo logo={candidate.logo} className="size-4 rounded-sm" />
               {/* 名称不占满剩余空间，避免把接入标签推到行尾。 */}
               <span className="min-w-0 whitespace-normal break-words">{candidate.label}</span>
               <ProviderAccessBadge group={candidate} />
@@ -118,7 +119,7 @@ export function ComposerProviderMenu({
   );
   const title = (
     <span className="flex min-w-0 flex-1 items-center gap-1.5">
-      {group ? <ProviderLogo logo={group.logo} className="size-4" /> : null}
+      {group ? <ProviderLogo logo={group.logo} className="size-4 rounded-sm" /> : null}
       <span className="truncate">{group?.label ?? "—"}</span>
       {group ? <ProviderAccessBadge group={group} /> : null}
     </span>
@@ -130,7 +131,7 @@ export function ComposerProviderMenu({
       aria-label={intl.formatMessage({ id: "common.loading" })}
       className="ml-auto inline-flex size-4 shrink-0 items-center justify-center text-foreground-subtle"
     >
-      <Loader2Icon aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
+      <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
     </span>
   ) : undefined;
   const triggerProps = {

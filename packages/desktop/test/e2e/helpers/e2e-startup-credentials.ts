@@ -23,11 +23,15 @@ export function createE2EStartupCredentialSeed(
       // Rewards 专项走本地控制面，需要同时验证 OAuth 与 JWT 注入。
       fileName === "marketing-touch-rewards.test.ts" ||
       fileName === "jwt-401-auto-logout.test.ts" ||
+      // 语音输入只对已登录用户显示，ticket 请求带 zcodejwttoken。
+      fileName === "composer-voice-input.test.ts" ||
       isRequestSecuritySpec(fileName) ||
       fileName === "coding-plan-upgrade-webview-refresh-provider.test.ts" ||
       fileName === "start-plan-manual-claim-experience.test.ts" ||
       fileName === "provider-family-responsive.test.ts" ||
       fileName === "conversation-session-offpeak-subagent-model-inheritance.test.ts" ||
+      // Team 回归只替代 HTTP，仍走真实凭据解析；缺少 JWT 会在创建前被拒绝。
+      fileName === "conversation-session-off-peak-team-plan.test.ts" ||
       fileName === "conversation-session-off-peak-invalid-ticket.test.ts"
     );
   });

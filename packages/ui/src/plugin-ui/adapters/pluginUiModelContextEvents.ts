@@ -1,11 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  buildPluginUiSessionKey,
-  type PluginUiSessionScope,
-} from "@/plugin-ui/contract.js";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { buildPluginUiSessionKey, type PluginUiSessionScope } from "@/plugin-ui/contract.js";
 import type { PluginUiModelContext } from "@/plugin-ui/domain/pluginUiModelContext.js";
 
-// 接收端登记不保存草稿：Composer hook 是唯一 owner；卸载立即撤销投递能力。
+// 待发送上下文随 session 保存在窗口内；卸载 Composer 只撤销投递能力。
+const pending = new Map<string, readonly PluginUiModelContext[]>();
+const empty: readonly PluginUiModelContext[] = [];
+const listeners = new Set<() => void>();
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+};
+function update(key: string, items: readonly PluginUiModelContext[]) {
+  if (items.length) pending.set(key, items);
+  else pending.delete(key);
+  for (const listener of listeners) listener();
+}
+export function clearPluginUiModelContexts(scope: PluginUiSessionScope) {
+  update(buildPluginUiSessionKey(scope), empty);
+}
 const receivers = new Map<string, (context: PluginUiModelContext) => void>();
 
 export function registerPluginUiModelContextReceiver(
@@ -42,49 +56,50 @@ export function usePluginUiModelContexts(
   removeContext: (id: string) => void;
   clearContexts: () => void;
 } {
-  const [contexts, setContexts] = useState<readonly PluginUiModelContext[]>([]);
   const key = input.sessionId
     ? buildPluginUiSessionKey({ ...input, sessionId: input.sessionId })
     : null;
   const { sessionId, workspacePath, workspaceIdentity } = input;
   const onContextAddedRef = useRef(input.onContextAdded);
   onContextAddedRef.current = input.onContextAdded;
-  const contextsRef = useRef(contexts);
-  contextsRef.current = contexts;
-  useEffect(() => {
-    setContexts([]);
-  }, [key]);
+  const contexts = useSyncExternalStore(
+    subscribe,
+    () => (key ? (pending.get(key) ?? empty) : empty),
+    () => empty,
+  );
   useEffect(() => {
     if (!sessionId) return;
     return registerPluginUiModelContextReceiver(
       { workspacePath, workspaceIdentity, sessionId },
       (context) => {
-        const existing = contextsRef.current.some(
-          (item) => item.id === context.id,
-        );
-        setContexts((items) => {
-          const index = items.findIndex((item) => item.id === context.id);
-          return index < 0
-            ? [...items, context]
-            : items.map((item) => (item.id === context.id ? context : item));
-        });
-        // updater 保持纯函数；新增判定与回调放到 updater 外，避免 StrictMode 双执行重复插入。
-        if (!existing) {
+        if (!key) return;
+        const items = pending.get(key) ?? empty;
+        const index = items.findIndex((item) => item.id === context.id);
+        // 新增判定在 update 前做：update 后 getSnapshot 立即返回新值，回调移到 update 后就分不清新增了。
+        if (index < 0) {
           onContextAddedRef.current?.(context);
         }
+        update(
+          key,
+          index < 0
+            ? [...items, context]
+            : items.map((item) => (item.id === context.id ? context : item)),
+        );
       },
     );
-  }, [sessionId, workspacePath, workspaceIdentity]);
+  }, [key, sessionId, workspacePath, workspaceIdentity]);
   const removeContext = useCallback(
-    (id: string) =>
-      setContexts((items) => items.filter((item) => item.id !== id)),
-    [],
+    (id: string) => {
+      if (key)
+        update(
+          key,
+          (pending.get(key) ?? empty).filter((item) => item.id !== id),
+        );
+    },
+    [key],
   );
-  const clearContexts = useCallback(() => setContexts([]), []);
-  return {
-    contexts,
-    hasContexts: contexts.length > 0,
-    removeContext,
-    clearContexts,
-  };
+  const clearContexts = useCallback(() => {
+    if (key) update(key, empty);
+  }, [key]);
+  return { contexts, hasContexts: contexts.length > 0, removeContext, clearContexts };
 }

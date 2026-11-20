@@ -1,3 +1,8 @@
+import {
+  backgroundBatchTelemetryAttributes,
+  telemetryInputOrigin,
+  TELEMETRY_INPUT_ORIGIN_ATTRIBUTE,
+} from "./input-intent-persistence.js";
 import { traceContextToLogContext } from "../deps.js";
 import { refreshOffPeakWork } from "../off-peak/runtime.js";
 import type { RuntimeCommand, TaskNotificationRuntimeCommand } from "../command-queue.js";
@@ -175,10 +180,20 @@ async function runPostCommandActiveTargetLoop(
   abortSignal: AbortSignal,
 ): Promise<Awaited<ReturnType<AgentRuntimeInternal["continueActiveTargetLoop"]>> | null> {
   if (command.mode === "prompt" && command.options?.continueActiveTargetAfterTurn === true) {
+    const originalTrace = command.options.traceContext ?? command.traceContext;
+    const inputOrigin = telemetryInputOrigin(command.options.intent, originalTrace.attributes);
     return await runActiveTargetContinuationLoop.call(this, {
       abortSignal,
       inputId: command.options.inputId,
-      traceContext: command.options.traceContext ?? command.traceContext,
+      traceContext: inputOrigin
+        ? {
+            ...originalTrace,
+            attributes: {
+              ...originalTrace.attributes,
+              [TELEMETRY_INPUT_ORIGIN_ATTRIBUTE]: inputOrigin,
+            },
+          }
+        : originalTrace,
       trigger: "user-prompt",
       verifyBeforeFirstContinue: true,
     });
@@ -346,6 +361,13 @@ async function runTaskNotificationBatch(
   const firstCommand = eligibleCommands[0];
   if (!firstCommand) return;
 
+  // 合批轮和 goal 自动续跑属于同一因果链，不能在续跑时回退到首条通知的来源。
+  const batchTraceContext = {
+    ...firstCommand.traceContext,
+    attributes: backgroundBatchTelemetryAttributes(
+      eligibleCommands.map((command) => command.traceContext),
+    ),
+  };
   const foregroundExecution = beginForegroundExecution.call(this, firstCommand);
   const commandIds = eligibleCommands.map((command) => command.id);
   try {
@@ -370,7 +392,9 @@ async function runTaskNotificationBatch(
       abortSignal: foregroundExecution.controller.signal,
       // 批次展示 metadata 只保留代表任务，composition 必须检查整批，不能被首个 Bash 任务遮蔽。
       backgroundSubagentResultConsumed: eligibleCommands.some(
-        (command) => command.originMeta?.backgroundSource === "subagent",
+        (command) =>
+          command.originMeta?.backgroundSource === "subagent" &&
+          command.originMeta.subagentStall === undefined,
       ),
       // 同一规则的 workflow 维度：run 的完成 / 提问通知在批里。
       workflowResultConsumed: eligibleCommands.some(
@@ -383,11 +407,11 @@ async function runTaskNotificationBatch(
       recordedInputMessageId: persisted.messageId,
       skipInputRecord: true,
       skipUserPromptSubmitHooks: true,
-      traceContext: firstCommand.traceContext,
+      traceContext: batchTraceContext,
     });
     await runPostCommandActiveTargetLoop.call(
       this,
-      firstCommand,
+      { ...firstCommand, traceContext: batchTraceContext },
       foregroundExecution.controller.signal,
     );
     this.logger?.info?.("Background task notification batch completed", {
