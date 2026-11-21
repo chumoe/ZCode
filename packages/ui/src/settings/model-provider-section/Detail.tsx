@@ -242,6 +242,7 @@ export function ModelProviderSectionDetail({
   codingPlanDisconnectProviderId,
   onSave,
   onAddPersonalModel,
+  onFetchProviderModels,
   onSavePersonalModelDraft,
   onSetPersonalModelEnabled,
   onDeletePersonalModel,
@@ -278,6 +279,7 @@ export function ModelProviderSectionDetail({
     config: ProviderSettingsFormProvider["models"][number]["personalConfig"],
     useRecommendedConfig?: boolean,
   ) => Promise<unknown>;
+  onFetchProviderModels?: (providerId: string) => Promise<void>;
   onSavePersonalModelDraft?: (input: SavePersonalModelDraftInput) => Promise<unknown>;
   onSetPersonalModelEnabled?: (
     providerId: string,
@@ -320,6 +322,7 @@ export function ModelProviderSectionDetail({
   // 账号分支曾漏传删除回调，出现只删 UI 不写盘。所有详情共用同一套模型操作装配。
   const modelEditingProps = {
     onAddPersonalModel,
+    onFetchProviderModels,
     onSavePersonalModelDraft,
     onSetPersonalModelEnabled,
     onDeletePersonalModel,

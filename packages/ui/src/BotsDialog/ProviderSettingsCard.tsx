@@ -19,7 +19,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { SettingsGroupCard, SettingsRow } from "@/settings/SettingsPageParts.js";
 import { cn } from "@/components/lib/utils.js";
 import { logger } from "@/logger.js";
-import type { BindCodeState, FeishuRegistrationState, WeixinRegistrationState } from "./shared.js";
+import type { BindCodeState, FeishuRegistrationState, WeixinRegistrationState, QQRegistrationState } from "./shared.js";
 import { PrivateDeliveryRetry } from "@/BotsDialog/PrivateDeliveryRetry.js";
 import { TELEGRAM_BOTFATHER_URL, formatBindCountdown } from "./shared.js";
 
@@ -122,6 +122,8 @@ export function ProviderSettingsCard({
   feishuRegistrationLoading,
   weixinRegistration,
   weixinRegistrationLoading,
+  qqRegistration,
+  qqRegistrationLoading,
   weixinActivated,
   secretSaving,
   onCredentialValueChange,
@@ -130,6 +132,7 @@ export function ProviderSettingsCard({
   onOpenTelegramBotFather,
   onStartWeixinRegistration,
   onStartFeishuRegistration,
+  onStartQqRegistration,
   onCreateBindCode,
   onUnbind,
   onCopyBindCommand,
@@ -145,6 +148,8 @@ export function ProviderSettingsCard({
   feishuRegistrationLoading: boolean;
   weixinRegistration: WeixinRegistrationState | null;
   weixinRegistrationLoading: boolean;
+  qqRegistration: QQRegistrationState | null;
+  qqRegistrationLoading: boolean;
   weixinActivated: boolean;
   secretSaving: boolean;
   onCredentialValueChange: (value: string) => void;
@@ -153,6 +158,7 @@ export function ProviderSettingsCard({
   onOpenTelegramBotFather: () => void;
   onStartWeixinRegistration: () => void;
   onStartFeishuRegistration: () => void;
+  onStartQqRegistration: () => void;
   onCreateBindCode: () => void;
   onUnbind: () => void;
   onCopyBindCommand: () => void;
@@ -178,6 +184,8 @@ export function ProviderSettingsCard({
         });
   const hasActiveFeishuRegistration = feishuRegistration?.botId === bot.id;
   const hasActiveWeixinRegistration = weixinRegistration?.botId === bot.id;
+  const hasActiveQqRegistration = qqRegistration?.botId === bot.id;
+  const isQq = bot.provider === "qq";
   const showBindCode = bindCode?.botId === bot.id;
 
   let control: ReactNode = null;
@@ -224,17 +232,21 @@ export function ProviderSettingsCard({
         onSaveSecret={onSaveSecret}
       />
     );
-  } else if ((isFeishuLike && !hasSecret) || (isWeixin && !hasSecret)) {
-    const loading = isWeixin ? weixinRegistrationLoading : feishuRegistrationLoading;
+  } else if ((isFeishuLike && !hasSecret) || (isWeixin && !hasSecret) || (isQq && !hasSecret)) {
+    const loading = isQq
+      ? qqRegistrationLoading
+      : isWeixin
+        ? weixinRegistrationLoading
+        : feishuRegistrationLoading;
+    const start = isQq
+      ? onStartQqRegistration
+      : isWeixin
+        ? onStartWeixinRegistration
+        : onStartFeishuRegistration;
     control = (
-      <Button
-        variant="outline"
-        size="lg"
-        onClick={isWeixin ? onStartWeixinRegistration : onStartFeishuRegistration}
-        disabled={loading}
-      >
+      <Button variant="outline" size="lg" onClick={start} disabled={loading}>
         {loading ? <LoaderCircle className="size-4 animate-spin" /> : <QrCode className="size-4" />}
-        {intl.formatMessage({ id: "bots.scanQrCode" })}
+        {intl.formatMessage({ id: isQq ? "bots.qqRegistrationButton" : "bots.scanQrCode" })}
       </Button>
     );
   } else {
@@ -399,6 +411,38 @@ export function ProviderSettingsCard({
                 (feishuRegistration.message ??
                 intl.formatMessage({
                   id: `bots.feishuRegistration.${feishuRegistration.status}`,
+                }))
+              )}
+            </div>
+          </div>
+        </div>
+      </DetailPanel>
+    );
+  } else if (hasActiveQqRegistration) {
+    detail = (
+      <DetailPanel>
+        <div className="flex flex-wrap items-start justify-center gap-4">
+          {qqRegistration.qrDataUrl ? (
+            <img
+              src={qqRegistration.qrDataUrl}
+              alt={intl.formatMessage({ id: "bots.qqRegistrationQrAlt" })}
+              className="size-40 shrink-0 rounded-lg border border-border bg-surface p-2"
+            />
+          ) : null}
+          <div className="min-w-52 flex-1 space-y-3 text-ui-base text-foreground-subtle">
+            <div>{intl.formatMessage({ id: "bots.qqRegistrationScanHint" })}</div>
+            <div>
+              {qqRegistration.status === "pending" || qqRegistration.status === "scanned" ? (
+                <span className="inline-flex items-center gap-1">
+                  <LoaderCircle className="size-3 animate-spin" />
+                  {intl.formatMessage({
+                    id: `bots.qqRegistration.${qqRegistration.status}`,
+                  })}
+                </span>
+              ) : (
+                (qqRegistration.message ??
+                intl.formatMessage({
+                  id: `bots.qqRegistration.${qqRegistration.status}`,
                 }))
               )}
             </div>

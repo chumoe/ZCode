@@ -59,6 +59,7 @@ import {
   type BindCodeState,
   type FeishuRegistrationState,
   type WeixinRegistrationState,
+  type QQRegistrationState,
 } from "@/BotsDialog/shared.js";
 
 function createEmptyConfig(): BotsConfigFile {
@@ -111,6 +112,8 @@ export function BotsDialog({
     null,
   );
   const [weixinRegistrationLoading, setWeixinRegistrationLoading] = useState(false);
+  const [qqRegistration, setQqRegistration] = useState<QQRegistrationState | null>(null);
+  const [qqRegistrationLoading, setQqRegistrationLoading] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [credentialValue, setCredentialValue] = useState("");
   const [secretSaving, setSecretSaving] = useState(false);
@@ -199,6 +202,7 @@ export function BotsDialog({
     setWorkspaceAccessSaving(false);
     setFeishuRegistration(null);
     setWeixinRegistration(null);
+    setQqRegistration(null);
   }, [selectedBotId, selectedBot?.provider]);
 
   useEffect(() => {
@@ -545,6 +549,72 @@ export function BotsDialog({
     };
   }, [botsService, intl, open, saveBot, selectedBot, weixinRegistration]);
 
+  // QQ 扫码注册轮询：SDK 内部已处理扫码状态，这里只取最终 appId/appSecret 并写入 bot 配置。
+  useEffect(() => {
+    const registration = qqRegistration;
+    if (!open || !selectedBot || selectedBot.provider !== "qq" || !registration) return undefined;
+    if (registration.status !== "pending" && registration.status !== "scanned") return undefined;
+
+    let cancelled = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const result = await botsService.pollQQRegistration({ qrUrl: registration.qrUrl });
+        if (cancelled) return;
+        if (result.status === "success") {
+          // 扫码注册约定：AppID 写 providerUserId，凭据为 "appId:appSecret"（见 qqProvider.loadAppId/loadAppSecret）。
+          const savedBot = await saveBot(
+            { ...selectedBot, provider: "qq", providerUserId: result.appId },
+            { credentialValue: `${result.appId}:${result.appSecret}` },
+          );
+          if (!cancelled) {
+            setConfig((previous) => ({
+              ...previous,
+              bots: previous.bots.map((bot) => (bot.id === savedBot.id ? savedBot : bot)),
+            }));
+            setQqRegistration(null);
+            toast(intl.formatMessage({ id: "bots.qqRegistrationSuccess" }));
+          }
+          return;
+        }
+        if (result.status === "expired" || result.status === "error") {
+          if (!cancelled) {
+            setQqRegistration((current) =>
+              current && current.botId === selectedBot.id
+                ? { ...current, status: result.status, message: result.message }
+                : current,
+            );
+          }
+          return;
+        }
+        if (result.status === "pending" || result.status === "scanned") {
+          if (!cancelled) {
+            setQqRegistration((current) =>
+              current && current.botId === selectedBot.id
+                ? { ...current, status: result.status, interval: result.interval }
+                : current,
+            );
+            timer = window.setTimeout(() => void poll(), Math.max(1, result.interval) * 1000);
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          logger.error("[BotsDialog] QQ 扫码注册轮询失败", error);
+          setQqRegistration((current) =>
+            current && current.botId === selectedBot.id
+              ? { ...current, status: "error", message: String(error) }
+              : current,
+          );
+        }
+      }
+    };
+    timer = window.setTimeout(() => void poll(), Math.max(1, registration.interval) * 1000);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [botsService, intl, open, saveBot, selectedBot, qqRegistration]);
+
   const patchSelectedBot = useCallback(
     (patch: Partial<BotConfig>) => {
       if (!selectedBot) return;
@@ -666,6 +736,7 @@ export function BotsDialog({
     setCredentialValue("");
     setFeishuRegistration(null);
     setWeixinRegistration(null);
+    setQqRegistration(null);
   };
 
   const handleAddBot = useCallback(
@@ -705,6 +776,7 @@ export function BotsDialog({
     setCredentialValue("");
     setFeishuRegistration(null);
     setWeixinRegistration(null);
+    setQqRegistration(null);
 
     if (entry.mode === "select") {
       setCreatingBot(false);
@@ -813,6 +885,38 @@ export function BotsDialog({
       toast(intl.formatMessage({ id: "bots.weixinRegistrationFailed" }, { error: message }));
     } finally {
       setWeixinRegistrationLoading(false);
+    }
+  }, [botsService, intl, selectedBot]);
+
+  const handleStartQqRegistration = useCallback(async () => {
+    if (!selectedBot || selectedBot.provider !== "qq") return;
+    setQqRegistrationLoading(true);
+    try {
+      const result = await botsService.beginQQRegistration();
+      let qrDataUrl: string | null = null;
+      try {
+        qrDataUrl = await QRCode.toDataURL(result.qrUrl, { margin: 1, width: 220 });
+      } catch (error) {
+        logger.error(
+          "[BotsDialog] 生成 QQ 注册二维码失败",
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      setQqRegistration({
+        botId: selectedBot.id,
+        qrUrl: result.qrUrl,
+        qrDataUrl,
+        interval: result.interval,
+        expiresAt: result.expiresAt,
+        status: "pending",
+      });
+      toast(intl.formatMessage({ id: "bots.qqRegistrationStarted" }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("[BotsDialog] 启动 QQ 扫码注册失败", message);
+      toast(intl.formatMessage({ id: "bots.qqRegistrationFailed" }, { error: message }));
+    } finally {
+      setQqRegistrationLoading(false);
     }
   }, [botsService, intl, selectedBot]);
 
@@ -1198,6 +1302,8 @@ export function BotsDialog({
                   feishuRegistrationLoading={feishuRegistrationLoading}
                   weixinRegistration={weixinRegistration}
                   weixinRegistrationLoading={weixinRegistrationLoading}
+                  qqRegistration={qqRegistration}
+                  qqRegistrationLoading={qqRegistrationLoading}
                   weixinActivated={Boolean(selectedBotState?.weixinActivatedAt)}
                   secretSaving={secretSaving}
                   onCredentialValueChange={setCredentialValue}
@@ -1206,6 +1312,7 @@ export function BotsDialog({
                   onOpenTelegramBotFather={handleOpenTelegramBotFather}
                   onStartWeixinRegistration={() => void handleStartWeixinRegistration()}
                   onStartFeishuRegistration={() => void handleStartFeishuRegistration()}
+                  onStartQqRegistration={() => void handleStartQqRegistration()}
                   onCreateBindCode={() => void handleCreateBindCode()}
                   onUnbind={() => void handleUnbind()}
                   onCopyBindCommand={() => void copyBindCommand()}

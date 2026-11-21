@@ -141,6 +141,7 @@ export function InlineEditableProviderCard({
   provider,
   onSave,
   onAddPersonalModel,
+  onFetchProviderModels,
   onSavePersonalModelDraft,
   onSetPersonalModelEnabled,
   onDeletePersonalModel,
@@ -164,6 +165,7 @@ export function InlineEditableProviderCard({
     config: ProviderSettingsFormModel["personalConfig"],
     useRecommendedConfig?: boolean,
   ) => Promise<unknown>;
+  onFetchProviderModels?: (providerId: string) => Promise<void>;
   onSavePersonalModelDraft?: (input: SavePersonalModelDraftInput) => Promise<unknown>;
   onSetPersonalModelEnabled?: (
     providerId: string,
@@ -725,6 +727,40 @@ export function InlineEditableProviderCard({
     [onAddPersonalModel, provider.providerId, runSaveOperation],
   );
 
+  // 从供应商拉取模型：调用宿主已有能力，成功后由 hook 内部刷新 provider view。
+  const [fetchingProviderModels, setFetchingProviderModels] = useState(false);
+  const fetchFeedbackKey = `provider-fetch-models-${provider.providerId}`;
+  const handleFetchProviderModels = useCallback(async () => {
+    if (!onFetchProviderModels || fetchingProviderModels) return;
+    setFetchingProviderModels(true);
+    showFeedback({
+      key: fetchFeedbackKey,
+      message: intl.formatMessage({ id: "settings.modelProvider.fetchModels" }) + "…",
+      state: "pending",
+      durationMs: 0,
+    });
+    try {
+      await onFetchProviderModels(provider.providerId);
+      showFeedback({
+        key: fetchFeedbackKey,
+        message: intl.formatMessage({ id: "settings.modelProvider.fetchModelsDone" }),
+        state: "success",
+      });
+    } catch (error) {
+      logger.error("[ModelProviderSection] 从供应商获取模型失败", error);
+      showFeedback({
+        key: fetchFeedbackKey,
+        message: intl.formatMessage(
+          { id: "settings.modelProvider.providerSaveFailure" },
+          { provider: provider.providerId, error: String(error) },
+        ),
+        state: "failure",
+      });
+    } finally {
+      setFetchingProviderModels(false);
+    }
+  }, [onFetchProviderModels, fetchingProviderModels, provider.providerId, showFeedback, intl, fetchFeedbackKey]);
+
   const handleReorderModelIds = useCallback(
     (modelIds: string[]) => {
       if (!onReorderModelIds) return;
@@ -851,6 +887,8 @@ export function InlineEditableProviderCard({
           onModelEnabledChange={handleModelEnabledChange}
           onDeleteModel={handleDeleteModel}
           onAddModel={handleAddModel}
+          onFetchModels={onFetchProviderModels ? handleFetchProviderModels : undefined}
+          fetchingModels={fetchingProviderModels}
           onReorderModelIds={onReorderModelIds ? handleReorderModelIds : undefined}
           settingsRevision={settingsRevision ?? 0}
         />

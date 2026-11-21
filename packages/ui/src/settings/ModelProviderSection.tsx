@@ -268,6 +268,7 @@ export function ModelProviderSection({
     saveProvider,
     createPersonalProvider,
     addPersonalModel,
+    fetchProviderModels,
     savePersonalModelDraft,
     setPersonalModelEnabled,
     deletePersonalModel,
@@ -1214,6 +1215,7 @@ export function ModelProviderSection({
           codingPlanDisconnectProviderId={codingPlanDisconnectProviderId}
           onSave={handleSave}
           onAddPersonalModel={addPersonalModel}
+          onFetchProviderModels={fetchProviderModels}
           onSavePersonalModelDraft={savePersonalModelDraft}
           onSetPersonalModelEnabled={setPersonalModelEnabled}
           onDeletePersonalModel={deletePersonalModel}

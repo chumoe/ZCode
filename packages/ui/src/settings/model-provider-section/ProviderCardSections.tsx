@@ -21,7 +21,7 @@ import {
   TID_MODEL_PROVIDER_NAME_INPUT,
   testId,
 } from "@zcode/shared/test-ids";
-import { InfoIcon, LockKeyholeIcon, Plus, Pencil, Trash2, MoreHorizontal } from "lucide-react";
+import { InfoIcon, LockKeyholeIcon, Plus, Pencil, Trash2, MoreHorizontal, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
 import {
@@ -358,6 +358,8 @@ export function ProviderModelsSection({
   onModelEnabledChange,
   onDeleteModel,
   onAddModel,
+  onFetchModels,
+  fetchingModels = false,
   onReorderModelIds,
   settingsRevision = 0,
 }: {
@@ -375,6 +377,8 @@ export function ProviderModelsSection({
   onDeleteModel: (modelId: string) => void;
   onModelEnabledChange?: (modelId: string, enabled: boolean) => void | Promise<void>;
   onAddModel: (model: ProviderSettingsFormModel) => void | Promise<void>;
+  onFetchModels?: () => void | Promise<void>;
+  fetchingModels?: boolean;
   onReorderModelIds?: (modelIds: string[]) => void;
   settingsRevision?: number;
 }) {
@@ -474,17 +478,33 @@ export function ProviderModelsSection({
         <span className="text-ui-base text-foreground-subtle">
           {intl.formatMessage({ id: "settings.modelProvider.models" })}
         </span>
-        <Button
-          type="button"
-          variant="secondary"
-          size="default"
-          className="rounded-lg"
-          data-testid={TID_MODEL_PROVIDER_ADD_MODEL_BUTTON}
-          onClick={openAddDialog}
-        >
-          <Plus data-icon="inline-start" aria-hidden="true" />
-          {intl.formatMessage({ id: "settings.modelProvider.addModel" })}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {onFetchModels ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="default"
+              className="rounded-lg"
+              data-testid="model-provider-fetch-models-button"
+              disabled={fetchingModels}
+              onClick={() => void onFetchModels()}
+            >
+              <RefreshCw data-icon="inline-start" aria-hidden="true" className={fetchingModels ? "animate-spin" : undefined} />
+              {intl.formatMessage({ id: "settings.modelProvider.fetchModels" })}
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="secondary"
+            size="default"
+            className="rounded-lg"
+            data-testid={TID_MODEL_PROVIDER_ADD_MODEL_BUTTON}
+            onClick={openAddDialog}
+          >
+            <Plus data-icon="inline-start" aria-hidden="true" />
+            {intl.formatMessage({ id: "settings.modelProvider.addModel" })}
+          </Button>
+        </div>
       </div>
       {models.length > 0 ? (
         <div className="overflow-hidden rounded-lg border border-input-border bg-input">
